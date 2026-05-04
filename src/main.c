@@ -35,7 +35,11 @@ int main(const int argc, const char *argv[]) {
   }
 
   token_stream_show(out, &token_stream);
-  parse(&token_stream);
+
+  push_domain(&domain_analyzer);
+  parse(&token_stream, &domain_analyzer);
+  show_domain(domain_analyzer.symbol_table, "global");
+  drop_domain(&domain_analyzer);
 
   if (out != stdout) {
     fclose(out);

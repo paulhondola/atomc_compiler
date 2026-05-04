@@ -6,204 +6,335 @@
 #include <stdlib.h>
 
 #include "../../include/frontend/token.h"
+#include "../../include/utils/utils.h"
+
+// CONTEXT
+
+typedef struct {
+  TokenStream    *stream;
+  DomainAnalyzer *domain_analyzer;
+  Symbol         *owner;
+} ParserContext;
 
 // FUNCTION DECLARATIONS
 
-bool consume(TokenStream *stream, TokenType type);
-bool type_base(TokenStream *stream);
-bool function_definition(TokenStream *stream);
-bool variable_definition(TokenStream *stream);
-bool struct_definition(TokenStream *stream);
-bool array_declaration(TokenStream *stream);
-bool function_parameter_definition(TokenStream *stream);
-bool stm_definition(TokenStream *stream);
-bool stm_compound_definition(TokenStream *stream);
-bool expression(TokenStream *stream);
-bool assignment_expression(TokenStream *stream);
-bool or_expression(TokenStream *stream);
-bool and_expression(TokenStream *stream);
-bool equal_expression(TokenStream *stream);
-bool relational_expression(TokenStream *stream);
-bool addition_expression(TokenStream *stream);
-bool multiplication_expression(TokenStream *stream);
-bool cast_expression(TokenStream *stream);
-bool unary_expression(TokenStream *stream);
-bool postfix_expression(TokenStream *stream);
-bool primary_expression(TokenStream *stream);
+bool consume(ParserContext *ctx, TokenType type);
+bool unit(ParserContext *ctx);
+bool type_base(ParserContext *ctx, Type *t);
+bool function_definition(ParserContext *ctx);
+bool variable_definition(ParserContext *ctx);
+bool struct_definition(ParserContext *ctx);
+bool array_declaration(ParserContext *ctx, Type *t);
+bool function_parameter_definition(ParserContext *ctx);
+bool stm_definition(ParserContext *ctx);
+bool stm_compound_definition(ParserContext *ctx, bool new_domain);
+bool expression(ParserContext *ctx);
+bool assignment_expression(ParserContext *ctx);
+bool or_expression(ParserContext *ctx);
+bool and_expression(ParserContext *ctx);
+bool equal_expression(ParserContext *ctx);
+bool relational_expression(ParserContext *ctx);
+bool addition_expression(ParserContext *ctx);
+bool multiplication_expression(ParserContext *ctx);
+bool cast_expression(ParserContext *ctx);
+bool unary_expression(ParserContext *ctx);
+bool postfix_expression(ParserContext *ctx);
+bool primary_expression(ParserContext *ctx);
 
-bool consume(TokenStream *stream, TokenType type) {
-  if (stream->tokens.iterator->type == type) {
-    stream->tokens.iterator = stream->tokens.iterator->next;
+bool consume(ParserContext *ctx, TokenType type) {
+  if (ctx->stream->tokens.iterator->type == type) {
+    ctx->stream->tokens.consumed = ctx->stream->tokens.iterator;
+    ctx->stream->tokens.iterator = ctx->stream->tokens.iterator->next;
     return true;
   }
   return false;
 }
 
+void parse(TokenStream *stream, DomainAnalyzer *domain_analyzer) {
+  ParserContext ctx = {
+      .stream          = stream,
+      .domain_analyzer = domain_analyzer,
+      .owner           = NULL,
+  };
+  ctx.stream->tokens.iterator = ctx.stream->tokens.head;
+  if (!unit(&ctx)) {
+    token_stream_error(ctx.stream, "syntax error");
+  }
+}
+
 // unit: ( struct_def | fn_def | var_def )* END
-bool unit(TokenStream *stream) {
+bool unit(ParserContext *ctx) {
   for (;;) {
-    if (struct_definition(stream)) {
-    } else if (function_definition(stream)) {
-    } else if (variable_definition(stream)) {
+    if (struct_definition(ctx)) {
+    } else if (function_definition(ctx)) {
+    } else if (variable_definition(ctx)) {
     } else {
       break;
     }
   }
-  if (consume(stream, END)) {
+  if (consume(ctx, END)) {
     return true;
   }
   return false;
 }
 
 // structDef: STRUCT ID LACC varDef* RACC SEMICOLON
-bool struct_definition(TokenStream *stream) {
-  Token *start = stream->tokens.iterator;
-  if (consume(stream, STRUCT)) {
-    if (consume(stream, ID)) {
-      if (consume(stream, LACC)) {
+bool struct_definition(ParserContext *ctx) {
+  Token *start = ctx->stream->tokens.iterator;
+  if (consume(ctx, STRUCT)) {
+    if (consume(ctx, ID)) {
+      Token *tk_name = ctx->stream->tokens.consumed;
+      if (consume(ctx, LACC)) {
+        Symbol *s = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
+        if (s) {
+          token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+        }
+        s = add_symbol_to_domain(ctx->domain_analyzer->symbol_table,
+                                 new_symbol(tk_name->text, SYMBOL_KIND_STRUCT));
+        s->type.type_base      = TYPE_BASE_STRUCT;
+        s->type.symbol         = s;
+        s->type.array_dimension = -1;
+
+        push_domain(ctx->domain_analyzer);
+        ctx->owner = s;
+
         // committed: LACC seen, must be a struct definition
-        while (variable_definition(stream)) {
+        while (variable_definition(ctx)) {
         }
-        if (!consume(stream, RACC)) {
-          token_stream_error(stream, "expected } to close struct body");
+        if (!consume(ctx, RACC)) {
+          token_stream_error(ctx->stream, "expected } to close struct body");
         }
-        if (!consume(stream, SEMICOLON)) {
-          token_stream_error(stream, "expected ; after struct definition");
+        if (!consume(ctx, SEMICOLON)) {
+          token_stream_error(ctx->stream, "expected ; after struct definition");
         }
+
+        ctx->owner = NULL;
+        drop_domain(ctx->domain_analyzer);
+
         return true;
       }
       // STRUCT ID without LACC: backtrack only if next token is an ID,
       // meaning this is a type usage (struct Foo myVar; or struct Foo myFn())
-      if (stream->tokens.iterator->type != ID) {
-        token_stream_error(stream, "expected { to start struct body");
+      if (ctx->stream->tokens.iterator->type != ID) {
+        token_stream_error(ctx->stream, "expected { to start struct body");
       }
     }
-    stream->tokens.iterator = start; // backtrack: STRUCT ID followed by ID is a varDef/fnDef
+    ctx->stream->tokens.iterator = start; // backtrack: STRUCT ID followed by ID is a varDef/fnDef
   }
   return false;
 }
 
 // varDef: typeBase ID arrayDecl? SEMICOLON
-bool variable_definition(TokenStream *stream) {
-  const Token *type_start = stream->tokens.iterator;
-  if (!type_base(stream)) {
+bool variable_definition(ParserContext *ctx) {
+  const Token *type_start = ctx->stream->tokens.iterator;
+  Type t;
+  if (!type_base(ctx, &t)) {
     return false;
   }
-  if (!consume(stream, ID)) {
+  if (!consume(ctx, ID)) {
     char buf[64];
-    token_stream_error(stream, "expected identifier after '%s'",
+    token_stream_error(ctx->stream, "expected identifier after '%s'",
                        token_type_base_name(type_start, buf, sizeof(buf)));
   }
-  array_declaration(stream); // optional
-  if (!consume(stream, SEMICOLON)) {
-    token_stream_error(stream, "expected ; after variable definition");
+  Token *tk_name = ctx->stream->tokens.consumed;
+  if (array_declaration(ctx, &t)) {
+    if (t.array_dimension == 0) {
+      token_stream_error(ctx->stream, "a vector variable must have a specified dimension");
+    }
   }
+  if (!consume(ctx, SEMICOLON)) {
+    token_stream_error(ctx->stream, "expected ; after variable definition");
+  }
+
+  Symbol *var = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
+  if (var) {
+    token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+  }
+  var        = new_symbol(tk_name->text, SYMBOL_KIND_VARIABLE);
+  var->type  = t;
+  var->owner = ctx->owner;
+  add_symbol_to_domain(ctx->domain_analyzer->symbol_table, var);
+
+  if (ctx->owner) {
+    switch (ctx->owner->kind) {
+    case SYMBOL_KIND_FUNCTION:
+      var->var_index = symbols_len(ctx->owner->function.locals);
+      add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
+      break;
+    case SYMBOL_KIND_STRUCT:
+      var->var_index = type_size(&ctx->owner->type);
+      add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
+      break;
+    default:
+      break;
+    }
+  } else {
+    var->var_mem = safe_alloc(type_size(&t));
+  }
+
   return true;
 }
 
 // typeBase: TYPE_INT | TYPE_DOUBLE | TYPE_CHAR | STRUCT ID
-bool type_base(TokenStream *stream) {
-  if (consume(stream, TYPE_INT)) {
+bool type_base(ParserContext *ctx, Type *t) {
+  t->array_dimension = -1;
+  if (consume(ctx, TYPE_INT)) {
+    t->type_base = TYPE_BASE_INT;
     return true;
   }
-  if (consume(stream, TYPE_DOUBLE)) {
+  if (consume(ctx, TYPE_DOUBLE)) {
+    t->type_base = TYPE_BASE_DOUBLE;
     return true;
   }
-  if (consume(stream, TYPE_CHAR)) {
+  if (consume(ctx, TYPE_CHAR)) {
+    t->type_base = TYPE_BASE_CHAR;
     return true;
   }
-  if (consume(stream, STRUCT)) {
-    if (consume(stream, ID)) {
+  if (consume(ctx, STRUCT)) {
+    if (consume(ctx, ID)) {
+      Token *tk_name = ctx->stream->tokens.consumed;
+      t->type_base   = TYPE_BASE_STRUCT;
+      t->symbol      = find_symbol(ctx->domain_analyzer, tk_name->text);
+      if (!t->symbol) {
+        token_stream_error(ctx->stream, "undefined struct: %s", tk_name->text);
+      }
       return true;
     }
-    token_stream_error(stream, "Need an identifier after declaring a struct");
+    token_stream_error(ctx->stream, "Need an identifier after declaring a struct");
   }
   return false;
 }
 
 // fnDef: ( typeBase | VOID ) ID LPAR ( fnParam ( COMMA fnParam )* )? RPAR
 // stmCompound
-bool function_definition(TokenStream *stream) {
-  Token *start = stream->tokens.iterator;
-  if (!consume(stream, VOID) && !type_base(stream)) {
+bool function_definition(ParserContext *ctx) {
+  Token *start = ctx->stream->tokens.iterator;
+  Type t;
+  if (consume(ctx, VOID)) {
+    t.type_base = TYPE_BASE_VOID;
+  } else if (!type_base(ctx, &t)) {
     return false;
   }
-  if (!consume(stream, ID)) {
-    stream->tokens.iterator = start;
+  if (!consume(ctx, ID)) {
+    ctx->stream->tokens.iterator = start;
     return false;
   }
-  if (!consume(stream, LPAR)) {
-    stream->tokens.iterator = start; // backtrack: could be varDef
+  Token *tk_name = ctx->stream->tokens.consumed;
+  if (!consume(ctx, LPAR)) {
+    ctx->stream->tokens.iterator = start; // backtrack: could be varDef
     return false;
   }
-  // committed: LPAR foundl
-  if (function_parameter_definition(stream)) {
-    while (consume(stream, COMMA)) {
-      if (!function_parameter_definition(stream)) {
-        token_stream_error(stream, "expected parameter after ,");
+
+  Symbol *fn = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
+  if (fn) {
+    token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+  }
+  fn             = new_symbol(tk_name->text, SYMBOL_KIND_FUNCTION);
+  fn->type       = t;
+  fn->owner      = NULL; // global function
+  add_symbol_to_domain(ctx->domain_analyzer->symbol_table, fn);
+  ctx->owner = fn;
+  push_domain(ctx->domain_analyzer);
+
+  // committed: LPAR found
+  if (function_parameter_definition(ctx)) {
+    while (consume(ctx, COMMA)) {
+      if (!function_parameter_definition(ctx)) {
+        token_stream_error(ctx->stream, "expected parameter after ,");
       }
     }
   }
-  if (!consume(stream, RPAR)) {
-    if (stream->tokens.iterator->type == ID) {
-      token_stream_error(stream, "missing type before parameter '%s'",
-                         stream->tokens.iterator->text);
+  if (!consume(ctx, RPAR)) {
+    if (ctx->stream->tokens.iterator->type == ID) {
+      token_stream_error(ctx->stream, "missing type before parameter '%s'",
+                         ctx->stream->tokens.iterator->text);
     }
-    if (stream->tokens.iterator->type == COMMA) {
-      token_stream_error(stream, "extra comma in parameter definition");
+    if (ctx->stream->tokens.iterator->type == COMMA) {
+      token_stream_error(ctx->stream, "extra comma in parameter definition");
     }
-    token_stream_error(stream, "expected ) after function parameters");
+    token_stream_error(ctx->stream, "expected ) after function parameters");
   }
-  if (!stm_compound_definition(stream)) {
-    token_stream_error(stream, "expected function body");
+  if (!stm_compound_definition(ctx, false)) {
+    token_stream_error(ctx->stream, "expected function body");
   }
+
+  drop_domain(ctx->domain_analyzer);
+  ctx->owner = NULL;
+
   return true;
 }
 
 // arrayDecl: LBRACKET INT? RBRACKET
-bool array_declaration(TokenStream *stream) {
-  if (consume(stream, LBRACKET)) {
-    consume(stream, INT); // optional size
-    if (consume(stream, RBRACKET)) {
+bool array_declaration(ParserContext *ctx, Type *t) {
+  if (consume(ctx, LBRACKET)) {
+    if (consume(ctx, INT)) {
+      Token *tk_size     = ctx->stream->tokens.consumed;
+      t->array_dimension = tk_size->integer_value;
+    } else {
+      t->array_dimension = 0;
+    }
+    if (consume(ctx, RBRACKET)) {
       return true;
     }
-    token_stream_error(stream, "expected ] in array declaration");
+    token_stream_error(ctx->stream, "expected ] in array declaration");
   }
 
   // Lookahead: if the next token looks like an array size or a lone ],
   // the opening [ was most likely forgotten — emit a precise diagnostic.
-  const Token *peek = stream->tokens.iterator;
+  const Token *peek = ctx->stream->tokens.iterator;
   if (peek->type == RBRACKET) {
-    token_stream_error(stream, "missing [ before ]");
+    token_stream_error(ctx->stream, "missing [ before ]");
   }
   if (peek->type == INT && peek->next && peek->next->type == RBRACKET) {
-    token_stream_error(stream, "missing [ before array size %d", peek->integer_value);
+    token_stream_error(ctx->stream, "missing [ before array size %d", peek->integer_value);
   }
 
   return false;
 }
 
 // fnParam: typeBase ID arrayDecl?
-bool function_parameter_definition(TokenStream *stream) {
-  if (!type_base(stream)) {
+bool function_parameter_definition(ParserContext *ctx) {
+  Type t;
+  if (!type_base(ctx, &t)) {
     return false;
   }
-  if (!consume(stream, ID)) {
-    token_stream_error(stream, "expected identifier in function parameter");
+  if (!consume(ctx, ID)) {
+    token_stream_error(ctx->stream, "expected identifier in function parameter");
   }
-  array_declaration(stream); // optional
+  Token *tk_name = ctx->stream->tokens.consumed;
+  if (array_declaration(ctx, &t)) {
+    t.array_dimension = 0; // arrays as parameters are always int v[]
+  }
+
+  Symbol *param = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
+  if (param) {
+    token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+  }
+  param              = new_symbol(tk_name->text, SYMBOL_KIND_PARAMETER);
+  param->type        = t;
+  param->owner       = ctx->owner;
+  param->param_index = symbols_len(ctx->owner->function.parameters);
+  add_symbol_to_domain(ctx->domain_analyzer->symbol_table, param);
+  add_symbol_to_list(&ctx->owner->function.parameters, duplicate_symbol(param));
+
   return true;
 }
 
 // stmCompound: LACC ( varDef | stm )* RACC
-bool stm_compound_definition(TokenStream *stream) {
-  if (!consume(stream, LACC)) {
+bool stm_compound_definition(ParserContext *ctx, bool new_domain) {
+  if (!consume(ctx, LACC)) {
     return false;
   }
-  while (variable_definition(stream) || stm_definition(stream)) {
+  if (new_domain) {
+    push_domain(ctx->domain_analyzer);
   }
-  if (!consume(stream, RACC)) {
-    token_stream_error(stream, "expected } to close compound statement");
+  while (variable_definition(ctx) || stm_definition(ctx)) {
+  }
+  if (!consume(ctx, RACC)) {
+    token_stream_error(ctx->stream, "expected } to close compound statement");
+  }
+  if (new_domain) {
+    drop_domain(ctx->domain_analyzer);
   }
   return true;
 }
@@ -213,67 +344,67 @@ bool stm_compound_definition(TokenStream *stream) {
 //    | WHILE LPAR expr RPAR stm
 //    | RETURN expr? SEMICOLON
 //    | expr? SEMICOLON
-bool stm_definition(TokenStream *stream) {
-  if (stm_compound_definition(stream)) {
+bool stm_definition(ParserContext *ctx) {
+  if (stm_compound_definition(ctx, true)) {
     return true;
   }
-  if (consume(stream, IF)) {
-    if (!consume(stream, LPAR)) {
-      token_stream_error(stream, "expected ( after if");
+  if (consume(ctx, IF)) {
+    if (!consume(ctx, LPAR)) {
+      token_stream_error(ctx->stream, "expected ( after if");
     }
-    if (!expression(stream)) {
-      token_stream_error(stream, "expected expression in if condition");
+    if (!expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression in if condition");
     }
-    if (!consume(stream, RPAR)) {
-      token_stream_error(stream, "expected ) after if condition");
+    if (!consume(ctx, RPAR)) {
+      token_stream_error(ctx->stream, "expected ) after if condition");
     }
-    if (!stm_definition(stream)) {
-      token_stream_error(stream, "expected statement after if");
+    if (!stm_definition(ctx)) {
+      token_stream_error(ctx->stream, "expected statement after if");
     }
-    if (consume(stream, ELSE)) {
-      if (!stm_definition(stream)) {
-        token_stream_error(stream, "expected statement after else");
+    if (consume(ctx, ELSE)) {
+      if (!stm_definition(ctx)) {
+        token_stream_error(ctx->stream, "expected statement after else");
       }
     }
     return true;
   }
-  if (consume(stream, WHILE)) {
-    if (!consume(stream, LPAR)) {
-      token_stream_error(stream, "expected ( after while");
+  if (consume(ctx, WHILE)) {
+    if (!consume(ctx, LPAR)) {
+      token_stream_error(ctx->stream, "expected ( after while");
     }
-    if (!expression(stream)) {
-      token_stream_error(stream, "expected expression in while condition");
+    if (!expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression in while condition");
     }
-    if (!consume(stream, RPAR)) {
-      token_stream_error(stream, "expected ) after while condition");
+    if (!consume(ctx, RPAR)) {
+      token_stream_error(ctx->stream, "expected ) after while condition");
     }
-    if (!stm_definition(stream)) {
-      token_stream_error(stream, "expected statement after while");
+    if (!stm_definition(ctx)) {
+      token_stream_error(ctx->stream, "expected statement after while");
     }
     return true;
   }
-  if (consume(stream, RETURN)) {
-    expression(stream); // optional
-    if (!consume(stream, SEMICOLON)) {
-      token_stream_error(stream, "expected ; after return");
+  if (consume(ctx, RETURN)) {
+    expression(ctx); // optional
+    if (!consume(ctx, SEMICOLON)) {
+      token_stream_error(ctx->stream, "expected ; after return");
     }
     return true;
   }
   // expr? SEMICOLON
-  if (expression(stream)) {
-    if (!consume(stream, SEMICOLON)) {
-      token_stream_error(stream, "expected ; after expression");
+  if (expression(ctx)) {
+    if (!consume(ctx, SEMICOLON)) {
+      token_stream_error(ctx->stream, "expected ; after expression");
     }
     return true;
   }
-  if (consume(stream, SEMICOLON)) {
+  if (consume(ctx, SEMICOLON)) {
     return true; // empty statement
   }
   return false;
 }
 
-bool expression(TokenStream *stream) {
-  if (assignment_expression(stream)) {
+bool expression(ParserContext *ctx) {
+  if (assignment_expression(ctx)) {
     return true;
   }
 
@@ -283,39 +414,39 @@ bool expression(TokenStream *stream) {
 // exprAssign: exprUnary ASSIGN exprAssign | exprOr
 // Note: parse exprOr first (covers casts, unary, etc.), then check for ASSIGN.
 // Lvalue validation is left to semantic analysis.
-bool assignment_expression(TokenStream *stream) {
-  if (!or_expression(stream)) {
+bool assignment_expression(ParserContext *ctx) {
+  if (!or_expression(ctx)) {
     return false;
   }
-  if (consume(stream, ASSIGN)) {
-    if (!assignment_expression(stream)) {
-      token_stream_error(stream, "expected expression after =");
+  if (consume(ctx, ASSIGN)) {
+    if (!assignment_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after =");
     }
   }
   return true;
 }
 
 // exprOr: exprOr OR exprAnd | exprAnd  =>  exprAnd ( OR exprAnd )*
-bool or_expression(TokenStream *stream) {
-  if (!and_expression(stream)) {
+bool or_expression(ParserContext *ctx) {
+  if (!and_expression(ctx)) {
     return false;
   }
-  while (consume(stream, OR)) {
-    if (!and_expression(stream)) {
-      token_stream_error(stream, "expected expression after ||");
+  while (consume(ctx, OR)) {
+    if (!and_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after ||");
     }
   }
   return true;
 }
 
 // exprAnd: exprAnd AND exprEq | exprEq  =>  exprEq ( AND exprEq )*
-bool and_expression(TokenStream *stream) {
-  if (!equal_expression(stream)) {
+bool and_expression(ParserContext *ctx) {
+  if (!equal_expression(ctx)) {
     return false;
   }
-  while (consume(stream, AND)) {
-    if (!equal_expression(stream)) {
-      token_stream_error(stream, "expected expression after &&");
+  while (consume(ctx, AND)) {
+    if (!equal_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after &&");
     }
   }
   return true;
@@ -323,15 +454,15 @@ bool and_expression(TokenStream *stream) {
 
 // exprEq: exprEq ( EQUAL | NOTEQ ) exprRel | exprRel  =>  exprRel ( ( EQUAL |
 // NOTEQ ) exprRel )*
-bool equal_expression(TokenStream *stream) {
-  if (!relational_expression(stream)) {
+bool equal_expression(ParserContext *ctx) {
+  if (!relational_expression(ctx)) {
     return false;
   }
   TokenType op;
-  while ((op = stream->tokens.iterator->type) == EQUAL || op == NOTEQ) {
-    consume(stream, op);
-    if (!relational_expression(stream)) {
-      token_stream_error(stream, "expected expression after '%s'",
+  while ((op = ctx->stream->tokens.iterator->type) == EQUAL || op == NOTEQ) {
+    consume(ctx, op);
+    if (!relational_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after '%s'",
                          op == EQUAL ? "==" : "!=");
     }
   }
@@ -340,17 +471,17 @@ bool equal_expression(TokenStream *stream) {
 
 // exprRel: exprRel ( LESS | LESSEQ | GREATER | GREATEREQ ) exprAdd | exprAdd
 //       =>  exprAdd ( ( LESS | LESSEQ | GREATER | GREATEREQ ) exprAdd )*
-bool relational_expression(TokenStream *stream) {
-  if (!addition_expression(stream)) {
+bool relational_expression(ParserContext *ctx) {
+  if (!addition_expression(ctx)) {
     return false;
   }
   TokenType op;
-  while ((op = stream->tokens.iterator->type) == LESS || op == LESSEQ ||
+  while ((op = ctx->stream->tokens.iterator->type) == LESS || op == LESSEQ ||
          op == GREATER || op == GREATEREQ) {
-    consume(stream, op);
-    if (!addition_expression(stream)) {
+    consume(ctx, op);
+    if (!addition_expression(ctx)) {
       const char *sym = op == LESS ? "<" : op == LESSEQ ? "<=" : op == GREATER ? ">" : ">=";
-      token_stream_error(stream, "expected expression after '%s'", sym);
+      token_stream_error(ctx->stream, "expected expression after '%s'", sym);
     }
   }
   return true;
@@ -358,13 +489,13 @@ bool relational_expression(TokenStream *stream) {
 
 // exprAdd: exprAdd ( ADD | SUB ) exprMul | exprMul  =>  exprMul ( ( ADD | SUB )
 // exprMul )*
-bool addition_expression(TokenStream *stream) {
-  if (!multiplication_expression(stream)) {
+bool addition_expression(ParserContext *ctx) {
+  if (!multiplication_expression(ctx)) {
     return false;
   }
-  while (consume(stream, ADD) || consume(stream, SUB)) {
-    if (!multiplication_expression(stream)) {
-      token_stream_error(stream, "expected expression after + or -");
+  while (consume(ctx, ADD) || consume(ctx, SUB)) {
+    if (!multiplication_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after + or -");
     }
   }
   return true;
@@ -372,66 +503,67 @@ bool addition_expression(TokenStream *stream) {
 
 // exprMul: exprMul ( MUL | DIV ) exprCast | exprCast  =>  exprCast ( ( MUL |
 // DIV ) exprCast )*
-bool multiplication_expression(TokenStream *stream) {
-  if (!cast_expression(stream)) {
+bool multiplication_expression(ParserContext *ctx) {
+  if (!cast_expression(ctx)) {
     return false;
   }
-  while (consume(stream, MUL) || consume(stream, DIV)) {
-    if (!cast_expression(stream)) {
-      token_stream_error(stream, "expected expression after * or /");
+  while (consume(ctx, MUL) || consume(ctx, DIV)) {
+    if (!cast_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after * or /");
     }
   }
   return true;
 }
 
 // exprCast: LPAR typeBase arrayDecl? RPAR exprCast | exprUnary
-bool cast_expression(TokenStream *stream) {
-  Token *start = stream->tokens.iterator;
-  if (consume(stream, LPAR)) {
-    if (type_base(stream)) {
-      array_declaration(stream); // optional
-      if (!consume(stream, RPAR)) {
-        token_stream_error(stream, "expected ) in cast expression");
+bool cast_expression(ParserContext *ctx) {
+  Token *start = ctx->stream->tokens.iterator;
+  if (consume(ctx, LPAR)) {
+    Type t;
+    if (type_base(ctx, &t)) {
+      array_declaration(ctx, &t); // optional
+      if (!consume(ctx, RPAR)) {
+        token_stream_error(ctx->stream, "expected ) in cast expression");
       }
-      if (!cast_expression(stream)) {
-        token_stream_error(stream, "expected expression after cast");
+      if (!cast_expression(ctx)) {
+        token_stream_error(ctx->stream, "expected expression after cast");
       }
       return true;
     }
-    stream->tokens.iterator = start; // backtrack: not a cast, try exprUnary
+    ctx->stream->tokens.iterator = start; // backtrack: not a cast, try exprUnary
   }
-  return unary_expression(stream);
+  return unary_expression(ctx);
 }
 
 // exprUnary: ( SUB | NOT ) exprUnary | exprPostfix
-bool unary_expression(TokenStream *stream) {
-  if (consume(stream, SUB) || consume(stream, NOT)) {
-    if (!unary_expression(stream)) {
-      token_stream_error(stream, "expected expression after unary operator");
+bool unary_expression(ParserContext *ctx) {
+  if (consume(ctx, SUB) || consume(ctx, NOT)) {
+    if (!unary_expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after unary operator");
     }
     return true;
   }
-  return postfix_expression(stream);
+  return postfix_expression(ctx);
 }
 
 // exprPostfix: exprPostfix LBRACKET expr RBRACKET | exprPostfix DOT ID |
 // exprPrimary
 //           =>  exprPrimary ( LBRACKET expr RBRACKET | DOT ID )*
-bool postfix_expression(TokenStream *stream) {
-  if (!primary_expression(stream)) {
+bool postfix_expression(ParserContext *ctx) {
+  if (!primary_expression(ctx)) {
     return false;
   }
   for (;;) {
-    if (consume(stream, LBRACKET)) {
-      if (!expression(stream)) {
-        token_stream_error(stream, "expected expression in array index");
+    if (consume(ctx, LBRACKET)) {
+      if (!expression(ctx)) {
+        token_stream_error(ctx->stream, "expected expression in array index");
       }
-      if (!consume(stream, RBRACKET)) {
-        token_stream_error(stream, "expected ] after array index");
+      if (!consume(ctx, RBRACKET)) {
+        token_stream_error(ctx->stream, "expected ] after array index");
       }
-    } else if (consume(stream, DOT)) {
-      if (!consume(stream, ID)) {
-        token_stream_error(stream, "expected identifier after .");
+    } else if (consume(ctx, DOT)) {
+      if (!consume(ctx, ID)) {
+        token_stream_error(ctx->stream, "expected identifier after .");
       }
     } else {
       break;
@@ -442,43 +574,36 @@ bool postfix_expression(TokenStream *stream) {
 
 // exprPrimary: ID ( LPAR ( expr ( COMMA expr )* )? RPAR )? | INT | DOUBLE |
 // CHAR | STRING | LPAR expr RPAR
-bool primary_expression(TokenStream *stream) {
-  if (consume(stream, ID)) {
-    if (consume(stream, LPAR)) {
-      if (expression(stream)) {
-        while (consume(stream, COMMA)) {
-          if (!expression(stream)) {
-            token_stream_error(stream, "expected expression after ,");
+bool primary_expression(ParserContext *ctx) {
+  if (consume(ctx, ID)) {
+    if (consume(ctx, LPAR)) {
+      if (expression(ctx)) {
+        while (consume(ctx, COMMA)) {
+          if (!expression(ctx)) {
+            token_stream_error(ctx->stream, "expected expression after ,");
           }
         }
       }
-      if (!consume(stream, RPAR)) {
-        token_stream_error(stream, "expected ) after function call arguments");
+      if (!consume(ctx, RPAR)) {
+        token_stream_error(ctx->stream, "expected ) after function call arguments");
       }
     }
     return true;
   }
 
-  if (consume(stream, INT) || consume(stream, DOUBLE) || consume(stream, CHAR) ||
-      consume(stream, STRING)) {
+  if (consume(ctx, INT) || consume(ctx, DOUBLE) || consume(ctx, CHAR) ||
+      consume(ctx, STRING)) {
     return true;
   }
 
-  if (consume(stream, LPAR)) {
-    if (!expression(stream)) {
-      token_stream_error(stream, "expected expression after (");
+  if (consume(ctx, LPAR)) {
+    if (!expression(ctx)) {
+      token_stream_error(ctx->stream, "expected expression after (");
     }
-    if (!consume(stream, RPAR)) {
-      token_stream_error(stream, "expected ) after expression");
+    if (!consume(ctx, RPAR)) {
+      token_stream_error(ctx->stream, "expected ) after expression");
     }
     return true;
   }
   return false;
-}
-
-void parse(TokenStream *stream) {
-  stream->tokens.iterator = stream->tokens.head;
-  if (!unit(stream)) {
-    token_stream_error(stream, "syntax error");
-  }
 }

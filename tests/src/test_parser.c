@@ -5,16 +5,23 @@
 #include "../../include/frontend/parser.h"
 #include "../../include/utils/utils.h"
 
+#include "../../include/analyzer/domain_analyzer.h"
+
 #define GREEN "\033[1;32m"
 #define RED "\033[1;31m"
 #define RESET "\033[0m"
 
 static void parse_src(const char *src) {
   TokenStream stream;
+  DomainAnalyzer domain_analyzer;
   token_stream_init(&stream);
+  domain_analyzer_init(&domain_analyzer);
   tokenize(&stream, src);
-  parse(&stream);
+  push_domain(&domain_analyzer);
+  parse(&stream, &domain_analyzer);
+  drop_domain(&domain_analyzer);
   token_stream_free(&stream);
+  domain_analyzer_free(&domain_analyzer);
 }
 
 // ---------------------------------------------------------------------------
@@ -36,14 +43,11 @@ static void test_parser_var_def(void) {
   parse_src("int arr[10];");
   printf(GREEN "Test 4 passed\n" RESET);
 
-  parse_src("int arr[];");
+  parse_src("struct Point {}; struct Point p;"); // struct-type variable at unit level
   printf(GREEN "Test 5 passed\n" RESET);
 
-  parse_src("struct Point p;"); // struct-type variable at unit level
+  parse_src("struct Point {}; struct Point pts[5];"); // struct-type array at unit level
   printf(GREEN "Test 6 passed\n" RESET);
-
-  parse_src("struct Point pts[5];"); // struct-type array at unit level
-  printf(GREEN "Test 7 passed\n" RESET);
 
   printf(GREEN "test_parser_var_def passed\n" RESET);
 }
@@ -61,7 +65,7 @@ static void test_parser_struct_def(void) {
   parse_src("struct Point { int x; int y; };");
   printf(GREEN "Test 2 passed\n" RESET);
 
-  parse_src("struct Node { int val; int next[]; };");
+  parse_src("struct Node { int val; int next[10]; };");
   printf(GREEN "Test 3 passed\n" RESET);
 
   parse_src("struct Mixed { int i; double d; char c; };");
@@ -279,7 +283,7 @@ static void test_parser_expr_cast(void) {
   parse_src("void f() { int x; x = (int)3.14; }");
   printf(GREEN "Test 2 passed\n" RESET);
 
-  parse_src("void f() { int arr[]; int x; x = (int)arr[0]; }");
+  parse_src("void f() { int arr[10]; int x; x = (int)arr[0]; }");
   printf(GREEN "Test 3 passed\n" RESET);
 
   printf(GREEN "test_parser_expr_cast passed!\n" RESET);

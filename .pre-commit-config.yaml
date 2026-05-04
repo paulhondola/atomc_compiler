@@ -1,0 +1,105 @@
+repos:
+  # ── clang-format ────────────────────────────────────────────────────────────
+  - repo: https://github.com/pocc/pre-commit-hooks
+    rev: v1.3.5
+    hooks:
+      - id: clang-format
+        name: clang-format
+        args: [--style=file]
+        types: [c]
+        files: ^(src|include|tests/src)/.*\.(c|h)$
+
+      # ── cppcheck ──────────────────────────────────────────────────────────────
+      - id: cppcheck
+        name: cppcheck
+        args:
+          - --enable=all
+          - --std=c23
+          - --inconclusive
+          - --error-exitcode=1
+          - --suppress=missingIncludeSystem
+          - -Iinclude
+        types: [c]
+        files: ^src/.*\.c$
+
+      # ── clang-tidy ────────────────────────────────────────────────────────────
+      - id: clang-tidy
+        name: clang-tidy
+        args:
+          - -p=buildDir
+          - --extra-arg=-isysroot
+          - --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+          - --
+          - -Iinclude
+          - -std=c23
+        types: [c]
+        files: ^src/.*\.c$
+
+      # ── local hooks ─────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      # ── meson compile + test ────────────────────────────────────────────────
+      - id: meson-setup
+        name: meson setup
+        entry: bash -c 'CC=clang meson setup buildDir --wipe 2>/dev/null || CC=clang meson setup buildDir'
+        language: system
+        pass_filenames: false
+
+      - id: meson-compile
+        name: meson compile
+        entry: meson compile -C buildDir
+        language: system
+        pass_filenames: false
+
+      - id: meson-test
+        name: meson test
+        entry: meson test -C buildDir --print-errorlogs
+        language: system
+        pass_filenames: false
+
+      # ── AddressSanitizer + UndefinedBehaviorSanitizer ───────────────────────
+      - id: asan-setup
+        name: sanitizers setup
+        entry: bash -c 'CC=clang meson setup buildDir-sanitizer --wipe -Db_sanitize=address,undefined -Db_lundef=false 2>/dev/null || CC=clang meson setup buildDir-sanitizer -Db_sanitize=address,undefined -Db_lundef=false'
+        language: system
+        pass_filenames: false
+
+      - id: asan-compile
+        name: sanitizers compile
+        entry: meson compile -C buildDir-sanitizer
+        language: system
+        pass_filenames: false
+
+      - id: asan-test
+        name: sanitizers test
+        entry: meson test -C buildDir-sanitizer --print-errorlogs
+        language: system
+        pass_filenames: false
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+      # ── leaks (macOS memory leak detection) ─────────────────────────────────
+      - id: leaks-atomcc
+        name: leaks atomcc
+        entry: leaks --atExit -- ./buildDir/atomcc
+        language: system
+        pass_filenames: false
+        env:
+          MallocStackLogging: "1"
+
+      - id: leaks-test-lexer
+        name: leaks test_lexer
+        entry: leaks --atExit -- ./buildDir/test_lexer
+        language: system
+        pass_filenames: false
+        env:
+          MallocStackLogging: "1"
+
+      - id: leaks-test-parser
+        name: leaks test_parser
+        entry: leaks --atExit -- ./buildDir/test_parser
+        language: system
+        pass_filenames: false
+        env:
+          MallocStackLogging: "1"

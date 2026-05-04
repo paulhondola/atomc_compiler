@@ -1,0 +1,41 @@
+---
+# Checks to enable/disable
+# Prefix a check with '-' to disable it
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -misc-include-cleaner,
+  -cert-err33-c
+
+# Treat warnings as errors
+WarningsAsErrors: ""
+
+# Where to look for compile_commands.json
+HeaderFilterRegex: "include/.*\\.h$"
+
+# Per-check options
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+  - key: bugprone-easily-swappable-parameters.MinimumLength
+    value: "3"

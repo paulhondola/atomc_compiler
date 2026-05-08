@@ -14,5 +14,7 @@ Symbol *add_symbol_to_domain(Domain *domain, Symbol *symbol);
 // if no symbol find, returns NULL
 Symbol *find_symbol_in_domain(Domain *domain, const char *name);
 
+#include <stdio.h>
+
 // shows the content of the given domain
-void show_domain(Domain *domain, const char *name);
+void show_domain(FILE *out, Domain *domain, const char *name);

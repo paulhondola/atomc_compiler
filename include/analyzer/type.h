@@ -29,4 +29,6 @@ int type_size(Type *type);
 
 int type_base_size(Type *type);
 
-void show_named_type(Type *type, const char *name);
+#include <stdio.h>
+
+void show_named_type(FILE *out, Type *type, const char *name);

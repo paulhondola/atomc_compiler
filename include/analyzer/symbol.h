@@ -69,7 +69,9 @@ Symbol *add_function_parameter(Symbol *function, const char *name, Type type);
 // the number of the symbols in list
 int symbols_len(Symbol *list);
 
-void show_symbol(Symbol *symbol);
+#include <stdio.h>
+
+void show_symbol(FILE *out, Symbol *symbol);
 
 // frees the memory of a list of symbols
 void free_symbols(Symbol *list);

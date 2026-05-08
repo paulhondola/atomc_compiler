@@ -66,45 +66,45 @@ int symbols_len(Symbol *list) {
 }
 
 // prints a symbol's information to stdout
-void show_symbol(Symbol *symbol) {
+void show_symbol(FILE *out, Symbol *symbol) {
   switch (symbol->kind) {
     case SYMBOL_KIND_VARIABLE:
-      show_named_type(&symbol->type, symbol->name);
+      show_named_type(out, &symbol->type, symbol->name);
       if (symbol->owner) {
-        printf(";\t// size=%d, idx=%d\n", type_size(&symbol->type), symbol->var_index);
+        fprintf(out, ";\t// size=%d, idx=%d\n", type_size(&symbol->type), symbol->var_index);
       } else {
-        printf(";\t// size=%d, mem=%p\n", type_size(&symbol->type), symbol->var_mem);
+        fprintf(out, ";\t// size=%d, mem=%p\n", type_size(&symbol->type), symbol->var_mem);
       }
       break;
     case SYMBOL_KIND_PARAMETER: {
-      show_named_type(&symbol->type, symbol->name);
-      printf(" /*size=%d, idx=%d*/", type_size(&symbol->type), symbol->param_index);
+      show_named_type(out, &symbol->type, symbol->name);
+      fprintf(out, " /*size=%d, idx=%d*/", type_size(&symbol->type), symbol->param_index);
     } break;
     case SYMBOL_KIND_FUNCTION: {
-      show_named_type(&symbol->type, symbol->name);
-      printf("(");
+      show_named_type(out, &symbol->type, symbol->name);
+      fprintf(out, "(");
       bool next = false;
       for (Symbol *param = symbol->function.parameters; param; param = param->next) {
         if (next) {
-          printf(", ");
+          fprintf(out, ", ");
         }
-        show_symbol(param);
+        show_symbol(out, param);
         next = true;
       }
-      printf("){\n");
+      fprintf(out, "){\n");
       for (Symbol *local = symbol->function.locals; local; local = local->next) {
-        printf("\t");
-        show_symbol(local);
+        fprintf(out, "\t");
+        show_symbol(out, local);
       }
-      printf("\t}\n");
+      fprintf(out, "\t}\n");
     } break;
     case SYMBOL_KIND_STRUCT: {
-      printf("struct %s{\n", symbol->name);
+      fprintf(out, "struct %s{\n", symbol->name);
       for (Symbol *member = symbol->struct_members; member; member = member->next) {
-        printf("\t");
-        show_symbol(member);
+        fprintf(out, "\t");
+        show_symbol(out, member);
       }
-      printf("\t};\t// size=%d\n", type_size(&symbol->type));
+      fprintf(out, "\t};\t// size=%d\n", type_size(&symbol->type));
     } break;
   }
 }

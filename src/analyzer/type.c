@@ -32,29 +32,29 @@ int type_size(Type *type) {
   return type->array_dimension * type_base_size(type);
 }
 
-void show_named_type(Type *type, const char *name) {
+void show_named_type(FILE *out, Type *type, const char *name) {
   switch (type->type_base) {
     case TYPE_BASE_INT:
-      printf("int");
+      fprintf(out, "int");
       break;
     case TYPE_BASE_DOUBLE:
-      printf("double");
+      fprintf(out, "double");
       break;
     case TYPE_BASE_CHAR:
-      printf("char");
+      fprintf(out, "char");
       break;
     case TYPE_BASE_VOID:
-      printf("void");
+      fprintf(out, "void");
       break;
     default: // TYPE_BASE_STRUCT
-      printf("struct %s", type->symbol->name);
+      fprintf(out, "struct %s", type->symbol->name);
   }
   if (name) {
-    printf(" %s", name);
+    fprintf(out, " %s", name);
   }
   if (type->array_dimension == 0) {
-    printf("[]");
+    fprintf(out, "[]");
   } else if (type->array_dimension > 0) {
-    printf("[%d]", type->array_dimension);
+    fprintf(out, "[%d]", type->array_dimension);
   }
 }

@@ -5,19 +5,74 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <argtable3.h>
 
 #include "../include/analyzer/domain_analyzer.h"
 #include "../include/frontend/lexer.h"
 #include "../include/frontend/parser.h"
 #include "../include/utils/utils.h"
 
-int main(const int argc, const char *argv[]) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <input_file> [output_file]\n", argv[0]);
+int main(int argc, char *argv[]) {
+  struct arg_file *source_code_file;
+  struct arg_file *tokens_file;
+  struct arg_file *domain_file;
+  struct arg_lit  *help;
+  struct arg_end  *end;
+
+  void *argtable[] = {
+      help              = arg_lit0(NULL, "help", "print this help and exit"),
+      tokens_file       = arg_file0("t", "tokens", "<file>", "Output token stream to <file>"),
+      domain_file       = arg_file0("d", "domain", "<file>", "Output domain analyzer info to <file>"),
+      source_code_file  = arg_file1(NULL, NULL, "<file>", "Source code file"),
+      end               = arg_end(20),
+  };
+
+  const char *progname = "atomcc";
+
+  if (arg_nullcheck(argtable) != 0) {
+    fprintf(stderr, "%s: insufficient memory\n", progname);
     return 1;
   }
 
-  const char *src_string = load_file(argv[1]);
+  int nerrors = arg_parse(argc, argv, argtable);
+
+  if (help->count > 0) {
+    printf("Usage: %s", progname);
+    arg_print_syntax(stdout, argtable, "\n");
+    printf("AtomC-Compiler -- A compiler for the AtomC language.\n\n");
+    arg_print_glossary(stdout, argtable, "  %-25s %s\n");
+    arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]));
+    return 0;
+  }
+
+  if (nerrors > 0) {
+    arg_print_errors(stderr, end, progname);
+    fprintf(stderr, "Try '%s --help' for more information.\n", progname);
+    arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]));
+    return 1;
+  }
+
+  const char *source_code_path         = source_code_file->filename[0];
+  const char *token_output_path  = tokens_file->count > 0 ? tokens_file->filename[0] : NULL;
+  const char *domain_output_path = domain_file->count > 0 ? domain_file->filename[0] : NULL;
+
+  FILE *token_out = stdout;
+  if (token_output_path) {
+    token_out = fopen(token_output_path, "w");
+    if (token_out == NULL) {
+      err("cannot open tokens output file %s", token_output_path);
+    }
+  }
+
+  FILE *domain_out = stdout;
+  if (domain_output_path) {
+    domain_out = fopen(domain_output_path, "w");
+    if (domain_out == NULL) {
+      err("cannot open domain output file %s", domain_output_path);
+    }
+  }
+
+  const char *src_string = load_file(source_code_path);
 
   TokenStream    token_stream;
   DomainAnalyzer domain_analyzer;
@@ -25,29 +80,26 @@ int main(const int argc, const char *argv[]) {
   domain_analyzer_init(&domain_analyzer);
 
   tokenize(&token_stream, src_string);
-
-  FILE *out = stdout;
-  if (argc >= 3) {
-    out = fopen(argv[2], "w");
-    if (out == NULL) {
-      err("cannot open output file %s", argv[2]);
-    }
-  }
-
-  token_stream_show(out, &token_stream);
+  token_stream_show(token_out, &token_stream);
 
   push_domain(&domain_analyzer);
   parse(&token_stream, &domain_analyzer);
-  show_domain(domain_analyzer.symbol_table, "global");
+  show_domain(domain_out, domain_analyzer.symbol_table, "global");
   drop_domain(&domain_analyzer);
 
-  if (out != stdout) {
-    fclose(out);
+  if (token_out != stdout) {
+    fclose(token_out);
+  }
+
+  if (domain_out != stdout) {
+    fclose(domain_out);
   }
 
   free((void *)src_string);
   token_stream_free(&token_stream);
   domain_analyzer_free(&domain_analyzer);
+
+  arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]));
 
   printf(GREEN "Parsing finished successfully!" RESET "\n");
 

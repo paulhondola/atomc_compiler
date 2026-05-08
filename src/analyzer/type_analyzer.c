@@ -8,9 +8,14 @@ bool can_be_scalar(ReturnValue *return_value) {
   Type *t = &return_value->type;
   if (t->array_dimension >= 0)
     return false;
-  if (t->type_base == TYPE_BASE_VOID)
-    return false;
-  return true;
+  switch (t->type_base) {
+    case TYPE_BASE_INT:
+    case TYPE_BASE_DOUBLE:
+    case TYPE_BASE_CHAR:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool convert_to(Type *src_type, Type *dst_type) {

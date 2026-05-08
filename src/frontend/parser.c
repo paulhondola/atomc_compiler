@@ -10,6 +10,7 @@
 #include "../../include/analyzer/domain_analyzer.h"
 #include "../../include/analyzer/domain.h"
 #include "../../include/analyzer/symbol.h"
+#include "../../include/analyzer/type_analyzer.h"
 
 // CONTEXT
 
@@ -31,18 +32,18 @@ bool array_declaration(ParserContext *ctx, Type *t);
 bool function_parameter_definition(ParserContext *ctx);
 bool stm_definition(ParserContext *ctx);
 bool stm_compound_definition(ParserContext *ctx, bool new_domain);
-bool expression(ParserContext *ctx);
-bool assignment_expression(ParserContext *ctx);
-bool or_expression(ParserContext *ctx);
-bool and_expression(ParserContext *ctx);
-bool equal_expression(ParserContext *ctx);
-bool relational_expression(ParserContext *ctx);
-bool addition_expression(ParserContext *ctx);
-bool multiplication_expression(ParserContext *ctx);
-bool cast_expression(ParserContext *ctx);
-bool unary_expression(ParserContext *ctx);
-bool postfix_expression(ParserContext *ctx);
-bool primary_expression(ParserContext *ctx);
+bool expression(ParserContext *ctx, ReturnValue *r);
+bool assignment_expression(ParserContext *ctx, ReturnValue *r);
+bool or_expression(ParserContext *ctx, ReturnValue *r);
+bool and_expression(ParserContext *ctx, ReturnValue *r);
+bool equal_expression(ParserContext *ctx, ReturnValue *r);
+bool relational_expression(ParserContext *ctx, ReturnValue *r);
+bool addition_expression(ParserContext *ctx, ReturnValue *r);
+bool multiplication_expression(ParserContext *ctx, ReturnValue *r);
+bool cast_expression(ParserContext *ctx, ReturnValue *r);
+bool unary_expression(ParserContext *ctx, ReturnValue *r);
+bool postfix_expression(ParserContext *ctx, ReturnValue *r);
+bool primary_expression(ParserContext *ctx, ReturnValue *r);
 
 bool consume(ParserContext *ctx, TokenType type) {
   if (ctx->stream->tokens.iterator->type == type) {
@@ -355,8 +356,12 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after if");
     }
-    if (!expression(ctx)) {
+    ReturnValue rCond;
+    if (!expression(ctx, &rCond)) {
       token_stream_error(ctx->stream, "expected expression in if condition");
+    }
+    if (!can_be_scalar(&rCond)) {
+      token_stream_error(ctx->stream, "the if condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
       token_stream_error(ctx->stream, "expected ) after if condition");
@@ -375,8 +380,12 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after while");
     }
-    if (!expression(ctx)) {
+    ReturnValue rCond;
+    if (!expression(ctx, &rCond)) {
       token_stream_error(ctx->stream, "expected expression in while condition");
+    }
+    if (!can_be_scalar(&rCond)) {
+      token_stream_error(ctx->stream, "the while condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
       token_stream_error(ctx->stream, "expected ) after while condition");
@@ -387,14 +396,31 @@ bool stm_definition(ParserContext *ctx) {
     return true;
   }
   if (consume(ctx, RETURN)) {
-    expression(ctx); // optional
+    ReturnValue rExpr;
+    if (expression(ctx, &rExpr)) {
+      if (ctx->owner->type.type_base == TYPE_BASE_VOID) {
+        token_stream_error(ctx->stream, "a void function cannot return a value");
+      }
+      if (!can_be_scalar(&rExpr)) {
+        token_stream_error(ctx->stream, "the return value must be a scalar value");
+      }
+      if (!convert_to(&rExpr.type, &ctx->owner->type)) {
+        token_stream_error(ctx->stream,
+                           "cannot convert the return expression type to the function return type");
+      }
+    } else {
+      if (ctx->owner->type.type_base != TYPE_BASE_VOID) {
+        token_stream_error(ctx->stream, "a non-void function must return a value");
+      }
+    }
     if (!consume(ctx, SEMICOLON)) {
       token_stream_error(ctx->stream, "expected ; after return");
     }
     return true;
   }
   // expr? SEMICOLON
-  if (expression(ctx)) {
+  ReturnValue r;
+  if (expression(ctx, &r)) {
     if (!consume(ctx, SEMICOLON)) {
       token_stream_error(ctx->stream, "expected ; after expression");
     }
@@ -406,120 +432,184 @@ bool stm_definition(ParserContext *ctx) {
   return false;
 }
 
-bool expression(ParserContext *ctx) {
-  if (assignment_expression(ctx)) {
+bool expression(ParserContext *ctx, ReturnValue *r) {
+  if (assignment_expression(ctx, r)) {
     return true;
   }
-
   return false;
 }
 
 // exprAssign: exprUnary ASSIGN exprAssign | exprOr
-// Note: parse exprOr first (covers casts, unary, etc.), then check for ASSIGN.
-// Lvalue validation is left to semantic analysis.
-bool assignment_expression(ParserContext *ctx) {
-  if (!or_expression(ctx)) {
+bool assignment_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!or_expression(ctx, r)) {
     return false;
   }
   if (consume(ctx, ASSIGN)) {
-    if (!assignment_expression(ctx)) {
+    ReturnValue rDst = *r;
+    if (!assignment_expression(ctx, r)) {
       token_stream_error(ctx->stream, "expected expression after =");
     }
+    if (!rDst.is_left_value) {
+      token_stream_error(ctx->stream, "the assign destination must be a left-value");
+    }
+    if (rDst.is_constant) {
+      token_stream_error(ctx->stream, "the assign destination cannot be constant");
+    }
+    if (!can_be_scalar(&rDst)) {
+      token_stream_error(ctx->stream, "the assign destination must be scalar");
+    }
+    if (!can_be_scalar(r)) {
+      token_stream_error(ctx->stream, "the assign source must be scalar");
+    }
+    if (!convert_to(&r->type, &rDst.type)) {
+      token_stream_error(ctx->stream, "the assign source cannot be converted to destination");
+    }
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
 // exprOr: exprOr OR exprAnd | exprAnd  =>  exprAnd ( OR exprAnd )*
-bool or_expression(ParserContext *ctx) {
-  if (!and_expression(ctx)) {
+bool or_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!and_expression(ctx, r)) {
     return false;
   }
   while (consume(ctx, OR)) {
-    if (!and_expression(ctx)) {
+    ReturnValue right;
+    if (!and_expression(ctx, &right)) {
       token_stream_error(ctx->stream, "expected expression after ||");
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for ||");
+    }
+    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
 // exprAnd: exprAnd AND exprEq | exprEq  =>  exprEq ( AND exprEq )*
-bool and_expression(ParserContext *ctx) {
-  if (!equal_expression(ctx)) {
+bool and_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!equal_expression(ctx, r)) {
     return false;
   }
   while (consume(ctx, AND)) {
-    if (!equal_expression(ctx)) {
+    ReturnValue right;
+    if (!equal_expression(ctx, &right)) {
       token_stream_error(ctx->stream, "expected expression after &&");
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for &&");
+    }
+    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
-// exprEq: exprEq ( EQUAL | NOTEQ ) exprRel | exprRel  =>  exprRel ( ( EQUAL |
-// NOTEQ ) exprRel )*
-bool equal_expression(ParserContext *ctx) {
-  if (!relational_expression(ctx)) {
+// exprEq: exprEq ( EQUAL | NOTEQ ) exprRel | exprRel  =>  exprRel ( ( EQUAL | NOTEQ ) exprRel )*
+bool equal_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!relational_expression(ctx, r)) {
     return false;
   }
   TokenType op;
   while ((op = ctx->stream->tokens.iterator->type) == EQUAL || op == NOTEQ) {
     consume(ctx, op);
-    if (!relational_expression(ctx)) {
-      token_stream_error(ctx->stream, "expected expression after '%s'",
-                         op == EQUAL ? "==" : "!=");
+    ReturnValue right;
+    if (!relational_expression(ctx, &right)) {
+      token_stream_error(ctx->stream, "expected expression after '%s'", op == EQUAL ? "==" : "!=");
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for == or !=");
+    }
+    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
 // exprRel: exprRel ( LESS | LESSEQ | GREATER | GREATEREQ ) exprAdd | exprAdd
 //       =>  exprAdd ( ( LESS | LESSEQ | GREATER | GREATEREQ ) exprAdd )*
-bool relational_expression(ParserContext *ctx) {
-  if (!addition_expression(ctx)) {
+bool relational_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!addition_expression(ctx, r)) {
     return false;
   }
   TokenType op;
   while ((op = ctx->stream->tokens.iterator->type) == LESS || op == LESSEQ ||
          op == GREATER || op == GREATEREQ) {
     consume(ctx, op);
-    if (!addition_expression(ctx)) {
-      const char *sym = op == LESS ? "<" : op == LESSEQ ? "<=" : op == GREATER ? ">" : ">=";
+    ReturnValue right;
+    if (!addition_expression(ctx, &right)) {
+      const char *sym =
+          op == LESS ? "<" : op == LESSEQ ? "<=" : op == GREATER ? ">" : ">=";
       token_stream_error(ctx->stream, "expected expression after '%s'", sym);
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for <, <=, >, >=");
+    }
+    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
-// exprAdd: exprAdd ( ADD | SUB ) exprMul | exprMul  =>  exprMul ( ( ADD | SUB )
-// exprMul )*
-bool addition_expression(ParserContext *ctx) {
-  if (!multiplication_expression(ctx)) {
+// exprAdd: exprAdd ( ADD | SUB ) exprMul | exprMul  =>  exprMul ( ( ADD | SUB ) exprMul )*
+bool addition_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!multiplication_expression(ctx, r)) {
     return false;
   }
-  while (consume(ctx, ADD) || consume(ctx, SUB)) {
-    if (!multiplication_expression(ctx)) {
+  TokenType op;
+  while ((op = ctx->stream->tokens.iterator->type) == ADD || op == SUB) {
+    consume(ctx, op);
+    ReturnValue right;
+    if (!multiplication_expression(ctx, &right)) {
       token_stream_error(ctx->stream, "expected expression after + or -");
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for + or -");
+    }
+    r->type          = tDst;
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
-// exprMul: exprMul ( MUL | DIV ) exprCast | exprCast  =>  exprCast ( ( MUL |
-// DIV ) exprCast )*
-bool multiplication_expression(ParserContext *ctx) {
-  if (!cast_expression(ctx)) {
+// exprMul: exprMul ( MUL | DIV ) exprCast | exprCast  =>  exprCast ( ( MUL | DIV ) exprCast )*
+bool multiplication_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!cast_expression(ctx, r)) {
     return false;
   }
-  while (consume(ctx, MUL) || consume(ctx, DIV)) {
-    if (!cast_expression(ctx)) {
+  TokenType op;
+  while ((op = ctx->stream->tokens.iterator->type) == MUL || op == DIV) {
+    consume(ctx, op);
+    ReturnValue right;
+    if (!cast_expression(ctx, &right)) {
       token_stream_error(ctx->stream, "expected expression after * or /");
     }
+    Type tDst;
+    if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
+      token_stream_error(ctx->stream, "invalid operand type for * or /");
+    }
+    r->type          = tDst;
+    r->is_left_value = false;
+    r->is_constant   = true;
   }
   return true;
 }
 
 // exprCast: LPAR typeBase arrayDecl? RPAR exprCast | exprUnary
-bool cast_expression(ParserContext *ctx) {
+bool cast_expression(ParserContext *ctx, ReturnValue *r) {
   Token *start = ctx->stream->tokens.iterator;
   if (consume(ctx, LPAR)) {
     Type t;
@@ -528,46 +618,90 @@ bool cast_expression(ParserContext *ctx) {
       if (!consume(ctx, RPAR)) {
         token_stream_error(ctx->stream, "expected ) in cast expression");
       }
-      if (!cast_expression(ctx)) {
+      ReturnValue op;
+      if (!cast_expression(ctx, &op)) {
         token_stream_error(ctx->stream, "expected expression after cast");
       }
+      if (t.type_base == TYPE_BASE_STRUCT) {
+        token_stream_error(ctx->stream, "cannot convert to a struct type");
+      }
+      if (op.type.type_base == TYPE_BASE_STRUCT) {
+        token_stream_error(ctx->stream, "cannot convert a struct");
+      }
+      if (op.type.array_dimension >= 0 && t.array_dimension < 0) {
+        token_stream_error(ctx->stream, "an array can be converted only to another array");
+      }
+      if (op.type.array_dimension < 0 && t.array_dimension >= 0) {
+        token_stream_error(ctx->stream, "a scalar can be converted only to another scalar");
+      }
+      r->type          = t;
+      r->is_left_value = false;
+      r->is_constant   = true;
       return true;
     }
     ctx->stream->tokens.iterator = start; // backtrack: not a cast, try exprUnary
   }
-  return unary_expression(ctx);
+  return unary_expression(ctx, r);
 }
 
 // exprUnary: ( SUB | NOT ) exprUnary | exprPostfix
-bool unary_expression(ParserContext *ctx) {
+bool unary_expression(ParserContext *ctx, ReturnValue *r) {
   if (consume(ctx, SUB) || consume(ctx, NOT)) {
-    if (!unary_expression(ctx)) {
+    if (!unary_expression(ctx, r)) {
       token_stream_error(ctx->stream, "expected expression after unary operator");
     }
+    if (!can_be_scalar(r)) {
+      token_stream_error(ctx->stream, "unary - or ! must have a scalar operand");
+    }
+    r->is_left_value = false;
+    r->is_constant   = true;
     return true;
   }
-  return postfix_expression(ctx);
+  return postfix_expression(ctx, r);
 }
 
 // exprPostfix: exprPostfix LBRACKET expr RBRACKET | exprPostfix DOT ID |
 // exprPrimary
 //           =>  exprPrimary ( LBRACKET expr RBRACKET | DOT ID )*
-bool postfix_expression(ParserContext *ctx) {
-  if (!primary_expression(ctx)) {
+bool postfix_expression(ParserContext *ctx, ReturnValue *r) {
+  if (!primary_expression(ctx, r)) {
     return false;
   }
   for (;;) {
     if (consume(ctx, LBRACKET)) {
-      if (!expression(ctx)) {
+      ReturnValue idx;
+      if (!expression(ctx, &idx)) {
         token_stream_error(ctx->stream, "expected expression in array index");
+      }
+      if (r->type.array_dimension < 0) {
+        token_stream_error(ctx->stream, "only an array can be indexed");
+      }
+      Type tInt = {TYPE_BASE_INT, NULL, -1};
+      if (!convert_to(&idx.type, &tInt)) {
+        token_stream_error(ctx->stream, "the index is not convertible to int");
       }
       if (!consume(ctx, RBRACKET)) {
         token_stream_error(ctx->stream, "expected ] after array index");
       }
+      r->type.array_dimension = -1;
+      r->is_left_value        = true;
+      r->is_constant          = false;
     } else if (consume(ctx, DOT)) {
       if (!consume(ctx, ID)) {
         token_stream_error(ctx->stream, "expected identifier after .");
       }
+      Token *tk_name = ctx->stream->tokens.consumed;
+      if (r->type.type_base != TYPE_BASE_STRUCT) {
+        token_stream_error(ctx->stream, "a field can only be selected from a struct");
+      }
+      Symbol *s = find_symbol_in_list(r->type.symbol->struct_members, tk_name->text);
+      if (!s) {
+        token_stream_error(ctx->stream, "the structure %s does not have a field %s",
+                           r->type.symbol->name, tk_name->text);
+      }
+      r->type          = s->type;
+      r->is_left_value = true;
+      r->is_constant   = (r->type.array_dimension >= 0);
     } else {
       break;
     }
@@ -577,30 +711,91 @@ bool postfix_expression(ParserContext *ctx) {
 
 // exprPrimary: ID ( LPAR ( expr ( COMMA expr )* )? RPAR )? | INT | DOUBLE |
 // CHAR | STRING | LPAR expr RPAR
-bool primary_expression(ParserContext *ctx) {
+bool primary_expression(ParserContext *ctx, ReturnValue *r) {
   if (consume(ctx, ID)) {
+    Token *tk_name = ctx->stream->tokens.consumed;
+    Symbol *s      = find_symbol(ctx->domain_analyzer, tk_name->text);
+    if (!s) {
+      token_stream_error(ctx->stream, "undefined id: %s", tk_name->text);
+    }
     if (consume(ctx, LPAR)) {
-      if (expression(ctx)) {
+      if (s->kind != SYMBOL_KIND_FUNCTION) {
+        token_stream_error(ctx->stream, "only a function can be called");
+      }
+      Symbol     *param = s->function.parameters;
+      ReturnValue rArg;
+      if (expression(ctx, &rArg)) {
+        if (!param) {
+          token_stream_error(ctx->stream, "too many arguments in function call");
+        }
+        if (!convert_to(&rArg.type, &param->type)) {
+          token_stream_error(
+              ctx->stream,
+              "in call, cannot convert the argument type to the parameter type");
+        }
+        param = param->next;
         while (consume(ctx, COMMA)) {
-          if (!expression(ctx)) {
+          if (!expression(ctx, &rArg)) {
             token_stream_error(ctx->stream, "expected expression after ,");
           }
+          if (!param) {
+            token_stream_error(ctx->stream, "too many arguments in function call");
+          }
+          if (!convert_to(&rArg.type, &param->type)) {
+            token_stream_error(
+                ctx->stream,
+                "in call, cannot convert the argument type to the parameter type");
+          }
+          param = param->next;
         }
       }
       if (!consume(ctx, RPAR)) {
         token_stream_error(ctx->stream, "expected ) after function call arguments");
       }
+      if (param) {
+        token_stream_error(ctx->stream, "too few arguments in function call");
+      }
+      r->type          = s->type;
+      r->is_left_value = false;
+      r->is_constant   = true;
+    } else {
+      if (s->kind == SYMBOL_KIND_FUNCTION) {
+        token_stream_error(ctx->stream, "a function can only be called");
+      }
+      r->type          = s->type;
+      r->is_left_value = true;
+      r->is_constant   = (s->type.array_dimension >= 0);
     }
     return true;
   }
 
-  if (consume(ctx, INT) || consume(ctx, DOUBLE) || consume(ctx, CHAR) ||
-      consume(ctx, STRING)) {
+  if (consume(ctx, INT)) {
+    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
+    return true;
+  }
+  if (consume(ctx, DOUBLE)) {
+    r->type          = (Type){TYPE_BASE_DOUBLE, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
+    return true;
+  }
+  if (consume(ctx, CHAR)) {
+    r->type          = (Type){TYPE_BASE_CHAR, NULL, -1};
+    r->is_left_value = false;
+    r->is_constant   = true;
+    return true;
+  }
+  if (consume(ctx, STRING)) {
+    r->type          = (Type){TYPE_BASE_CHAR, NULL, 0};
+    r->is_left_value = false;
+    r->is_constant   = true;
     return true;
   }
 
   if (consume(ctx, LPAR)) {
-    if (!expression(ctx)) {
+    if (!expression(ctx, r)) {
       token_stream_error(ctx->stream, "expected expression after (");
     }
     if (!consume(ctx, RPAR)) {

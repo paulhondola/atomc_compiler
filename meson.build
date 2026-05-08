@@ -25,7 +25,9 @@ src_files = files(
 
 inc_dir = include_directories('include')
 
-exe = executable('atomcc', 'src/main.c', src_files, include_directories : inc_dir, c_args : compiler_args)
+argtable_dep = dependency('argtable3')
+
+exe = executable('atomcc', 'src/main.c', src_files, include_directories : inc_dir, c_args : compiler_args, dependencies : argtable_dep)
 
 # ------- LEXER -------
 lexer_files = files()

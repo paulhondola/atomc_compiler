@@ -45,6 +45,18 @@ Symbol *add_symbol_to_list(Symbol **list, Symbol *symbol) {
   return symbol;
 }
 
+// searches a name in a list of symbols
+// if it finds it, returns the correspondent symbol, else NULL
+Symbol *find_symbol_in_list(Symbol *list, const char *name) {
+  for (Symbol *symbol = list; symbol; symbol = symbol->next) {
+    if (!strcmp(symbol->name, name)) {
+      return symbol;
+    }
+  }
+  return NULL;
+}
+
+// returns the number of symbols in the list
 int symbols_len(Symbol *list) {
   int length = 0;
   for (; list; list = list->next) {
@@ -53,6 +65,7 @@ int symbols_len(Symbol *list) {
   return length;
 }
 
+// prints a symbol's information to stdout
 void show_symbol(Symbol *symbol) {
   switch (symbol->kind) {
     case SYMBOL_KIND_VARIABLE:
@@ -96,6 +109,7 @@ void show_symbol(Symbol *symbol) {
   }
 }
 
+// frees a symbol's memory
 void free_symbol(Symbol *symbol) {
   switch (symbol->kind) {
     case SYMBOL_KIND_VARIABLE:

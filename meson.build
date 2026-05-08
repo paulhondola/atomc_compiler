@@ -15,8 +15,10 @@ src_files = files(
     'src/frontend/token.c',
     'src/frontend/stream.c',
     'src/analyzer/symbol.c',
+    'src/analyzer/domain.c',
     'src/analyzer/domain_analyzer.c',
     'src/analyzer/type.c',
+    'src/analyzer/type_analyzer.c',
     'src/vm/instruction.c',
     'src/vm/vm.c',
 )

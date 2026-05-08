@@ -25,7 +25,3 @@ bool convert_to(Type *src, Type *dst);
 // returns true if t1 and t2 can be operands for an arithmetic operation
 // ex: double + int -> double
 bool arithmetic_type_to(Type *first_type, Type *second_type, Type *dst_type);
-
-// searches a name in a list of symbols
-// if it finds it, returns the correspondent symbol, else NULL
-Symbol *find_symbol_in_list(Symbol *list, const char *name);

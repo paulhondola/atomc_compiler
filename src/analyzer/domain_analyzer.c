@@ -32,23 +32,6 @@ void drop_domain(DomainAnalyzer *da) {
   free(domain);
 }
 
-void show_domain(Domain *domain, const char *name) {
-  printf("// domain: %s\n", name);
-  for (Symbol *symbol = domain->symbols; symbol; symbol = symbol->next) {
-    show_symbol(symbol);
-  }
-  puts("\n");
-}
-
-Symbol *find_symbol_in_domain(Domain *domain, const char *name) {
-  for (Symbol *symbol = domain->symbols; symbol; symbol = symbol->next) {
-    if (!strcmp(symbol->name, name)) {
-      return symbol;
-    }
-  }
-  return NULL;
-}
-
 Symbol *find_symbol(DomainAnalyzer *da, const char *name) {
   for (Domain *domain = da->symbol_table; domain; domain = domain->parent) {
     Symbol *symbol = find_symbol_in_domain(domain, name);
@@ -57,10 +40,6 @@ Symbol *find_symbol(DomainAnalyzer *da, const char *name) {
     }
   }
   return NULL;
-}
-
-Symbol *add_symbol_to_domain(Domain *domain, Symbol *symbol) {
-  return add_symbol_to_list(&domain->symbols, symbol);
 }
 
 Symbol *add_extern_function(DomainAnalyzer *da, const char *name,

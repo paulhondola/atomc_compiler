@@ -88,12 +88,3 @@ bool arithmetic_type_to(Type *first_type, Type *second_type, Type *dst_type) {
       return false;
   }
 }
-
-Symbol *find_symbol_in_list(Symbol *list, const char *name) {
-  for (Symbol *symbol = list; symbol; symbol = symbol->next) {
-    if (!strcmp(symbol->name, name)) {
-      return symbol;
-    }
-  }
-  return NULL;
-}

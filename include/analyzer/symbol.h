@@ -57,6 +57,15 @@ Symbol *duplicate_symbol(Symbol *symbol);
 // list - the address of the list where to add the symbol
 Symbol *add_symbol_to_list(Symbol **list, Symbol *symbol);
 
+// searches a name in a list of symbols
+// if it finds it, returns the correspondent symbol, else NULL
+Symbol *find_symbol_in_list(Symbol *list, const char *name);
+
+// add to fn a parameter with the given name and type
+// it doesn't verify for parameter redefinition
+// returns the added parameter
+Symbol *add_function_parameter(Symbol *function, const char *name, Type type);
+
 // the number of the symbols in list
 int symbols_len(Symbol *list);
 

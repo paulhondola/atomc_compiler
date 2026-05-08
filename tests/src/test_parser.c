@@ -6,6 +6,7 @@
 #include "../../include/utils/utils.h"
 
 #include "../../include/analyzer/domain_analyzer.h"
+#include "../../include/analyzer/domain.h"
 
 #define GREEN "\033[1;32m"
 #define RED "\033[1;31m"

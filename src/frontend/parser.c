@@ -7,6 +7,9 @@
 
 #include "../../include/frontend/token.h"
 #include "../../include/utils/utils.h"
+#include "../../include/analyzer/domain_analyzer.h"
+#include "../../include/analyzer/domain.h"
+#include "../../include/analyzer/symbol.h"
 
 // CONTEXT
 

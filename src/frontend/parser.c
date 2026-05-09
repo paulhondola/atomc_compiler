@@ -676,8 +676,8 @@ bool postfix_expression(ParserContext *ctx, ReturnValue *r) {
       if (r->type.array_dimension < 0) {
         token_stream_error(ctx->stream, "only an array can be indexed");
       }
-      Type tInt = {TYPE_BASE_INT, NULL, -1};
-      if (!convert_to(&idx.type, &tInt)) {
+      if (idx.type.array_dimension >= 0 ||
+          (idx.type.type_base != TYPE_BASE_INT && idx.type.type_base != TYPE_BASE_CHAR)) {
         token_stream_error(ctx->stream, "the index is not convertible to int");
       }
       if (!consume(ctx, RBRACKET)) {

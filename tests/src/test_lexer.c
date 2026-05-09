@@ -2,7 +2,11 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "../../include/frontend/lexer.h"
 #include "../../include/utils/utils.h"
@@ -14,6 +18,23 @@ static TokenStream tokenize_src(const char *src) {
   token_stream_init(&stream);
   tokenize(&stream, src);
   return stream;
+}
+
+// Runs tokenize in a child process; returns true when the child exits with
+// non-zero status (i.e. err() / exit(EXIT_FAILURE) was triggered).
+static bool exits_with_lexer_error(const char *src) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stderr);
+    TokenStream stream;
+    token_stream_init(&stream);
+    tokenize(&stream, src);
+    token_stream_free(&stream);
+    exit(EXIT_SUCCESS);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +240,272 @@ static void test_lexer_operators(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Delimiters
+// ---------------------------------------------------------------------------
+
+static void test_lexer_delimiters(void) {
+  printf("Running test_lexer_delimiters...\n");
+  TokenStream stream = tokenize_src(", ; ( ) [ ] { }");
+
+  Token *t = stream.tokens.head;
+
+  assert(t->type == COMMA);
+  printf(GREEN "Test 1 (COMMA) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == SEMICOLON);
+  printf(GREEN "Test 2 (SEMICOLON) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == LPAR);
+  printf(GREEN "Test 3 (LPAR) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == RPAR);
+  printf(GREEN "Test 4 (RPAR) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == LBRACKET);
+  printf(GREEN "Test 5 (LBRACKET) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == RBRACKET);
+  printf(GREEN "Test 6 (RBRACKET) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == LACC);
+  printf(GREEN "Test 7 (LACC) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == RACC);
+  printf(GREEN "Test 8 (RACC) passed\n" RESET);
+  t = t->next;
+
+  assert(t->type == END);
+  printf(GREEN "Test 9 (END follows RACC) passed\n" RESET);
+
+  token_stream_free(&stream);
+  printf(GREEN "test_lexer_delimiters passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Line number tracking
+// ---------------------------------------------------------------------------
+
+static void test_lexer_line_numbers(void) {
+  printf("Running test_lexer_line_numbers...\n");
+
+  // All tokens on a single line start at line 1
+  {
+    TokenStream stream = tokenize_src("int x");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    assert(t->line == 1);
+    t = t->next;
+    assert(t->type == ID);
+    assert(t->line == 1);
+    token_stream_free(&stream);
+    printf(GREEN "Test 1 (single line tokens start at line 1) passed\n" RESET);
+  }
+
+  // Token after a newline is on line 2
+  {
+    TokenStream stream = tokenize_src("int\nx");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    assert(t->line == 1);
+    t = t->next;
+    assert(t->type == ID);
+    assert(t->line == 2);
+    token_stream_free(&stream);
+    printf(GREEN "Test 2 (newline increments line counter) passed\n" RESET);
+  }
+
+  // Two blank lines → token on line 3
+  {
+    TokenStream stream = tokenize_src("int\n\nx");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    assert(t->line == 1);
+    t = t->next;
+    assert(t->type == ID);
+    assert(t->line == 3);
+    token_stream_free(&stream);
+    printf(GREEN "Test 3 (two newlines → line 3) passed\n" RESET);
+  }
+
+  // Windows-style CRLF line endings
+  {
+    TokenStream stream = tokenize_src("int\r\nx");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    assert(t->line == 1);
+    t = t->next;
+    assert(t->type == ID);
+    assert(t->line == 2);
+    token_stream_free(&stream);
+    printf(GREEN "Test 4 (CRLF line ending increments line counter once) passed\n" RESET);
+  }
+
+  // Block comment spanning lines increments the counter
+  {
+    TokenStream stream = tokenize_src("int /* line1\nline2 */ x");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    assert(t->line == 1);
+    t = t->next;
+    assert(t->type == ID);
+    assert(t->line == 2);
+    token_stream_free(&stream);
+    printf(GREEN "Test 5 (block comment newline increments counter) passed\n" RESET);
+  }
+
+  printf(GREEN "test_lexer_line_numbers passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Comment handling
+// ---------------------------------------------------------------------------
+
+static void test_lexer_comments(void) {
+  printf("Running test_lexer_comments...\n");
+
+  // Single-line comment: text after // until end-of-line is ignored
+  {
+    TokenStream stream = tokenize_src("int // this is ignored\nx");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    t = t->next;
+    assert(t->type == ID);
+    assert(strcmp(t->text, "x") == 0);
+    t = t->next;
+    assert(t->type == END);
+    token_stream_free(&stream);
+    printf(GREEN "Test 1 (single-line comment skipped) passed\n" RESET);
+  }
+
+  // Single-line comment at end of input (no trailing newline)
+  {
+    TokenStream stream = tokenize_src("int // comment");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    t = t->next;
+    assert(t->type == END);
+    token_stream_free(&stream);
+    printf(GREEN "Test 2 (single-line comment at EOF) passed\n" RESET);
+  }
+
+  // Block comment on one line
+  {
+    TokenStream stream = tokenize_src("int /* ignored */ x");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    t = t->next;
+    assert(t->type == ID);
+    assert(strcmp(t->text, "x") == 0);
+    t = t->next;
+    assert(t->type == END);
+    token_stream_free(&stream);
+    printf(GREEN "Test 3 (block comment on one line skipped) passed\n" RESET);
+  }
+
+  // Block comment spanning multiple lines
+  {
+    TokenStream stream = tokenize_src("int /* line1\nline2\nline3 */ x");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    t = t->next;
+    assert(t->type == ID);
+    assert(strcmp(t->text, "x") == 0);
+    t = t->next;
+    assert(t->type == END);
+    token_stream_free(&stream);
+    printf(GREEN "Test 4 (multi-line block comment skipped) passed\n" RESET);
+  }
+
+  // Multiple comments interleaved with tokens
+  {
+    TokenStream stream = tokenize_src("/* a */ int /* b */ x /* c */");
+    Token *t = stream.tokens.head;
+    assert(t->type == TYPE_INT);
+    t = t->next;
+    assert(t->type == ID);
+    t = t->next;
+    assert(t->type == END);
+    token_stream_free(&stream);
+    printf(GREEN "Test 5 (interleaved block comments) passed\n" RESET);
+  }
+
+  printf(GREEN "test_lexer_comments passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error conditions (fork-based)
+// ---------------------------------------------------------------------------
+
+static void test_lexer_errors(void) {
+  printf("Running test_lexer_errors...\n");
+
+  // Empty char literal: ''
+  assert(exits_with_lexer_error("''"));
+  printf(GREEN "Test 1 (empty char literal '' → error) passed\n" RESET);
+
+  // Unknown escape sequence in char: '\q'
+  assert(exits_with_lexer_error("'\\q'"));
+  printf(GREEN "Test 2 (unknown char escape '\\q' → error) passed\n" RESET);
+
+  // Unterminated char literal: 'ab' — 'a' is read, then 'b' is not a closing quote
+  assert(exits_with_lexer_error("'ab'"));
+  printf(GREEN "Test 3 (unterminated char literal 'ab' → error) passed\n" RESET);
+
+  // Unterminated string literal: no closing quote
+  assert(exits_with_lexer_error("\"hello"));
+  printf(GREEN "Test 4 (unterminated string literal → error) passed\n" RESET);
+
+  // Unknown escape sequence in string: "\q"
+  assert(exits_with_lexer_error("\"\\q\""));
+  printf(GREEN "Test 5 (unknown string escape \"\\q\" → error) passed\n" RESET);
+
+  // Missing digits after decimal point: 1. (nothing after the dot)
+  assert(exits_with_lexer_error("1."));
+  printf(GREEN "Test 6 (missing decimal digits '1.' → error) passed\n" RESET);
+
+  // Missing exponent digits: 1e with no digits following
+  assert(exits_with_lexer_error("1e"));
+  printf(GREEN "Test 7 (missing exponent digits '1e' → error) passed\n" RESET);
+
+  // Missing exponent digits after sign: 1e+
+  assert(exits_with_lexer_error("1e+"));
+  printf(GREEN "Test 8 (missing exponent digits '1e+' → error) passed\n" RESET);
+
+  // Integer out of range
+  assert(exits_with_lexer_error("99999999999999999999999999"));
+  printf(GREEN "Test 9 (integer out of range → error) passed\n" RESET);
+
+  // Double out of range
+  assert(exits_with_lexer_error("1e99999"));
+  printf(GREEN "Test 10 (double out of range → error) passed\n" RESET);
+
+  // Single ampersand — not a valid token, suggest &&
+  assert(exits_with_lexer_error("&"));
+  printf(GREEN "Test 11 (single '&' → error) passed\n" RESET);
+
+  // Single pipe — not a valid token, suggest ||
+  assert(exits_with_lexer_error("|"));
+  printf(GREEN "Test 12 (single '|' → error) passed\n" RESET);
+
+  // Unknown character
+  assert(exits_with_lexer_error("@"));
+  printf(GREEN "Test 13 (unknown char '@' → error) passed\n" RESET);
+
+  // Unterminated block comment
+  assert(exits_with_lexer_error("/* hello"));
+  printf(GREEN "Test 14 (unterminated block comment → error) passed\n" RESET);
+
+  printf(GREEN "test_lexer_errors passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
 
 int main(void) {
   test_lexer_keywords();
@@ -227,6 +514,10 @@ int main(void) {
   test_lexer_strings();
   test_lexer_chars();
   test_lexer_operators();
+  test_lexer_delimiters();
+  test_lexer_line_numbers();
+  test_lexer_comments();
+  test_lexer_errors();
 
   printf(GREEN "All tests passed successfully!\n" RESET);
   return 0;

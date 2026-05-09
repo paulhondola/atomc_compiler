@@ -68,13 +68,13 @@ This project uses [Meson](https://mesonbuild.com/) as its build system.
 #### Initialize the build directory
 
 ```bash
-meson setup buildDir
+meson setup target
 ```
 
 #### Compile the source code
 
 ```bash
-meson compile -C buildDir
+meson compile -C target
 ```
 
 ### Running the Compiler
@@ -82,7 +82,7 @@ meson compile -C buildDir
 After compiling, the `atomcc` executable will be available in `buildDir`:
 
 ```bash
-./buildDir/atomcc [input_file] [output_file]
+./target/atomcc [input_file] --tokens [token_output_file] --domain [domain_output_file]
 ```
 
 ### Testing
@@ -90,7 +90,7 @@ After compiling, the `atomcc` executable will be available in `buildDir`:
 Run the entire test suite via Meson:
 
 ```bash
-meson test -C buildDir
+meson test -C target
 ```
 
 ### Linting & Static Analysis
@@ -126,16 +126,15 @@ cppcheck --enable=all --std=c23 --inconclusive --suppress=missingIncludeSystem -
 #### Valgrind (Linux)
 
 ```bash
-valgrind --leak-check=full --track-origins=yes ./buildDir/atomcc
-valgrind --leak-check=full --track-origins=yes ./buildDir/test_lexer
-valgrind --leak-check=full --track-origins=yes ./buildDir/test_parser
+valgrind --leak-check=full --track-origins=yes ./target/atomcc
+valgrind --leak-check=full --track-origins=yes ./target/test_lexer
+valgrind --leak-check=full --track-origins=yes ./target/test_parser
 ```
 
 #### leaks (macOS)
 
 ```bash
-leaks --atExit -- ./buildDir/atomcc
-leaks --atExit -- ./buildDir/test_lexer
-leaks --atExit -- ./buildDir/test_parser
+leaks --atExit -- ./target/atomcc
+leaks --atExit -- ./target/test_lexer
+leaks --atExit -- ./target/test_parser
 ```
-

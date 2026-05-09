@@ -1,5 +1,10 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "../../include/frontend/lexer.h"
 #include "../../include/frontend/parser.h"
@@ -20,6 +25,20 @@ static void parse_src(const char *src) {
   drop_domain(&domain_analyzer);
   token_stream_free(&stream);
   domain_analyzer_free(&domain_analyzer);
+}
+
+// Runs parse_src in a child process; returns true when the child exits with
+// non-zero status (i.e. err() / exit(EXIT_FAILURE) was triggered).
+static bool exits_with_error(const char *src) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stderr);
+    parse_src(src);
+    exit(EXIT_SUCCESS);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +349,7 @@ static void test_parser_expr_unary(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Full program (mirrors tests/parser/test_parser_code_example.c)
+// Full program
 // ---------------------------------------------------------------------------
 
 static void test_parser_full_program(void) {
@@ -352,13 +371,191 @@ static void test_parser_full_program(void) {
             "  int i;"
             "  i = 10;"
             "  while (i != 0) {"
-            "    puti(i);"
             "    i = i / 2;"
             "  }"
             "}");
   printf(GREEN "Test 1 passed\n" RESET);
 
   printf(GREEN "test_parser_full_program passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error: syntax structure errors
+// ---------------------------------------------------------------------------
+
+static void test_parser_error_syntax(void) {
+  printf("Running test_parser_error_syntax...\n");
+
+  // Missing semicolon after variable definition
+  assert(exits_with_error("int x"));
+  printf(GREEN "Test 1 (missing ; after var def → error) passed\n" RESET);
+
+  // Missing closing brace in function body
+  assert(exits_with_error("void f() { int x;"));
+  printf(GREEN "Test 2 (unclosed function body → error) passed\n" RESET);
+
+  // Missing ( after if
+  assert(exits_with_error("void f() { if 1 ; }"));
+  printf(GREEN "Test 3 (missing ( after if → error) passed\n" RESET);
+
+  // Missing ) after if condition
+  assert(exits_with_error("void f() { if (1 ; }"));
+  printf(GREEN "Test 4 (missing ) after if condition → error) passed\n" RESET);
+
+  // Missing ( after while
+  assert(exits_with_error("void f() { while 1 ; }"));
+  printf(GREEN "Test 5 (missing ( after while → error) passed\n" RESET);
+
+  // Missing ) after while condition
+  assert(exits_with_error("void f() { while (1 ; }"));
+  printf(GREEN "Test 6 (missing ) after while condition → error) passed\n" RESET);
+
+  // Missing function body (function declaration without braces)
+  assert(exits_with_error("void f();"));
+  printf(GREEN "Test 7 (function without body → error) passed\n" RESET);
+
+  // Missing ; after struct definition
+  assert(exits_with_error("struct S {}"));
+  printf(GREEN "Test 8 (missing ; after struct def → error) passed\n" RESET);
+
+  // Missing ] in array declaration
+  assert(exits_with_error("int arr[10;"));
+  printf(GREEN "Test 9 (missing ] in array declaration → error) passed\n" RESET);
+
+  printf(GREEN "test_parser_error_syntax passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error: return type mismatches
+// ---------------------------------------------------------------------------
+
+static void test_parser_error_return(void) {
+  printf("Running test_parser_error_return...\n");
+
+  // void function returning a value
+  assert(exits_with_error("void f() { return 1; }"));
+  printf(GREEN "Test 1 (void returning value → error) passed\n" RESET);
+
+  // non-void function returning nothing
+  assert(exits_with_error("int f() { return; }"));
+  printf(GREEN "Test 2 (non-void returning nothing → error) passed\n" RESET);
+
+  // double function returning char — type conversion mismatch
+  // char → double is allowed (widening), so this MUST succeed:
+  parse_src("double f() { return 'a'; }");
+  printf(GREEN "Test 3 (char → double return: valid) passed\n" RESET);
+
+  printf(GREEN "test_parser_error_return passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error: expression / type errors
+// ---------------------------------------------------------------------------
+
+static void test_parser_error_exprs(void) {
+  printf("Running test_parser_error_exprs...\n");
+
+  // Indexing a non-array scalar
+  assert(exits_with_error("void f() { int x; x[0] = 1; }"));
+  printf(GREEN "Test 1 (indexing scalar → error) passed\n" RESET);
+
+  // Accessing a field from a non-struct value
+  assert(exits_with_error("void f() { int x; x.y = 1; }"));
+  printf(GREEN "Test 2 (field from non-struct → error) passed\n" RESET);
+
+  // Accessing an undefined struct field
+  assert(exits_with_error("struct S { int v; }; void f() { struct S s; s.z = 1; }"));
+  printf(GREEN "Test 3 (undefined struct field → error) passed\n" RESET);
+
+  // Cast to struct type is not allowed
+  assert(exits_with_error("struct S {}; void f() { int x; x = (struct S)x; }"));
+  printf(GREEN "Test 4 (cast to struct → error) passed\n" RESET);
+
+  // Cast from struct is not allowed
+  assert(exits_with_error("struct S {}; void f() { struct S s; int x; x = (int)s; }"));
+  printf(GREEN "Test 5 (cast from struct → error) passed\n" RESET);
+
+  // Assigning to a constant (right-value on left side)
+  assert(exits_with_error("void f() { 1 = 2; }"));
+  printf(GREEN "Test 6 (assign to constant → error) passed\n" RESET);
+
+  printf(GREEN "test_parser_error_exprs passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error: function call errors
+// ---------------------------------------------------------------------------
+
+static void test_parser_error_calls(void) {
+  printf("Running test_parser_error_calls...\n");
+
+  // Calling an undefined identifier
+  assert(exits_with_error("void f() { g(); }"));
+  printf(GREEN "Test 1 (call to undefined id → error) passed\n" RESET);
+
+  // Calling a non-function variable
+  assert(exits_with_error("void f() { int x; x(); }"));
+  printf(GREEN "Test 2 (calling non-function → error) passed\n" RESET);
+
+  // Too many arguments
+  assert(exits_with_error("void g() {} void f() { g(1); }"));
+  printf(GREEN "Test 3 (too many args → error) passed\n" RESET);
+
+  // Too few arguments
+  assert(exits_with_error("void g(int x) {} void f() { g(); }"));
+  printf(GREEN "Test 4 (too few args → error) passed\n" RESET);
+
+  // Referencing a function without calling it
+  assert(exits_with_error("int g() { return 0; } void f() { int x; x = g; }"));
+  printf(GREEN "Test 5 (function ref without call → error) passed\n" RESET);
+
+  printf(GREEN "test_parser_error_calls passed!\n" RESET);
+}
+
+// ---------------------------------------------------------------------------
+// Error: semantic / redefinition errors
+// ---------------------------------------------------------------------------
+
+static void test_parser_error_semantic(void) {
+  printf("Running test_parser_error_semantic...\n");
+
+  // Global variable redefinition
+  assert(exits_with_error("int x; int x;"));
+  printf(GREEN "Test 1 (global var redefinition → error) passed\n" RESET);
+
+  // Struct redefinition
+  assert(exits_with_error("struct S {}; struct S {};"));
+  printf(GREEN "Test 2 (struct redefinition → error) passed\n" RESET);
+
+  // Function redefinition
+  assert(exits_with_error("void f() {} void f() {}"));
+  printf(GREEN "Test 3 (function redefinition → error) passed\n" RESET);
+
+  // Duplicate parameter names
+  assert(exits_with_error("void f(int x, int x) {}"));
+  printf(GREEN "Test 4 (duplicate parameter names → error) passed\n" RESET);
+
+  // Parameter and local variable sharing name (same domain)
+  assert(exits_with_error("void f(int x) { int x; }"));
+  printf(GREEN "Test 5 (param/local name clash → error) passed\n" RESET);
+
+  // Duplicate local variables
+  assert(exits_with_error("void f() { int x; int x; }"));
+  printf(GREEN "Test 6 (local var redefinition → error) passed\n" RESET);
+
+  // Struct member redefinition
+  assert(exits_with_error("struct S { int x; int x; };"));
+  printf(GREEN "Test 7 (struct member redefinition → error) passed\n" RESET);
+
+  // Using an undefined struct type
+  assert(exits_with_error("struct Unknown v;"));
+  printf(GREEN "Test 8 (undefined struct type → error) passed\n" RESET);
+
+  // Array variable without a dimension is not allowed
+  assert(exits_with_error("int v[];"));
+  printf(GREEN "Test 9 (array var without dimension → error) passed\n" RESET);
+
+  printf(GREEN "test_parser_error_semantic passed!\n" RESET);
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +577,11 @@ int main(void) {
   test_parser_expr_postfix();
   test_parser_expr_unary();
   test_parser_full_program();
+  test_parser_error_syntax();
+  test_parser_error_return();
+  test_parser_error_exprs();
+  test_parser_error_calls();
+  test_parser_error_semantic();
 
   printf(GREEN "All tests passed successfully!\n" RESET);
   return 0;

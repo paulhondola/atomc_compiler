@@ -121,6 +121,9 @@ void token_print_name(FILE *out, const Token *token) {
     case TYPE_CHAR:
       fprintf(out, "TYPE_CHAR");
       break;
+    case TYPE_FLOAT:
+      fprintf(out, "TYPE_FLOAT");
+      break;
     default:
       fprintf(out, "UNKNOWN");
       break;
@@ -138,6 +141,8 @@ const char *token_type_base_name(const Token *token, char *buffer, size_t buffer
       return "double";
     case TYPE_CHAR:
       return "char";
+    case TYPE_FLOAT:
+      return "float";
     case STRUCT:
       snprintf(buffer, buffer_size, "struct %s", token->next->text);
       return buffer;

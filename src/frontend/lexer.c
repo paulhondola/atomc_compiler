@@ -191,6 +191,9 @@ const char *consume_identifier_or_keyword(TokenStream *stream, const char *sourc
   } else if (strcmp(text, "char") == 0) {
     free(text);
     add_token(stream, TYPE_CHAR);
+  } else if (strcmp(text, "float") == 0) {
+    free(text);
+    add_token(stream, TYPE_FLOAT);
   } else {
     // add the identifier token
     Token *token = add_token(stream, ID);

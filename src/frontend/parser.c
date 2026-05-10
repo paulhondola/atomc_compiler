@@ -194,6 +194,10 @@ bool type_base(ParserContext *ctx, Type *t) {
     t->type_base = TYPE_BASE_CHAR;
     return true;
   }
+  if (consume(ctx, TYPE_FLOAT)) {
+    t->type_base = TYPE_BASE_DOUBLE;
+    return true;
+  }
   if (consume(ctx, STRUCT)) {
     if (consume(ctx, ID)) {
       Token *tk_name = ctx->stream->tokens.consumed;

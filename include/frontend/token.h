@@ -16,6 +16,7 @@ typedef enum : uint8_t {
   TYPE_INT,
   TYPE_DOUBLE,
   TYPE_CHAR,
+  TYPE_FLOAT,
   // data types
   INT,
   DOUBLE,

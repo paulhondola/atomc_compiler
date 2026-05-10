@@ -322,8 +322,12 @@ static void test_type_size(void) {
   m_double->var_index = type_size(&s->type);
   add_symbol_to_list(&s->struct_members, duplicate_symbol(m_double));
 
-  assert(type_size(&s->type) == (int)(sizeof(int) + sizeof(double)));
-  printf(GREEN "Test 7 (STRUCT size = sum of member sizes) passed\n" RESET);
+  // With alignment: int@0, double@8 (padded from 4), total=align_up(16, 8)=16
+  int expected_int_double = align_up(
+      align_up((int)sizeof(int), (int)sizeof(double)) + (int)sizeof(double),
+      (int)sizeof(double));
+  assert(type_size(&s->type) == expected_int_double);
+  printf(GREEN "Test 7 (STRUCT aligned size correct) passed\n" RESET);
 
   free_symbol(m_int);
   free_symbol(m_double);
@@ -335,41 +339,55 @@ static void test_type_size(void) {
 // TEST 9: STRUCT MEMBER BYTE OFFSETS
 // ============================================================
 
+// Computes the next aligned offset: last_member->var_index + type_size, then align_up.
+static int next_member_offset(Symbol *members, Type *member_type) {
+  Symbol *last = members;
+  int     cursor = 0;
+  if (last) {
+    while (last->next) { last = last->next; }
+    cursor = last->var_index + type_size(&last->type);
+  }
+  return align_up(cursor, type_alignment(member_type));
+}
+
 static void test_struct_member_offsets(void) {
   printf("Running test_struct_member_offsets...\n");
 
-  // Mirrors what the parser does for: struct S { int i; double d; char c; }
-  // var_index = type_size(&owner->type) at moment of insertion = byte offset
-
+  // struct S { int i; double d; char c; }
+  // Aligned layout: i@0, d@8 (+4 padding), c@16, total=24 (trailing padding to align 8)
   Symbol *s         = new_symbol("S", SYMBOL_KIND_STRUCT);
   s->type           = (Type){TYPE_BASE_STRUCT, s, -1};
   s->struct_members = NULL;
 
-  Symbol *m1    = new_symbol("i", SYMBOL_KIND_VARIABLE);
-  m1->type      = (Type){TYPE_BASE_INT, NULL, -1};
-  m1->owner     = s;
-  m1->var_index = type_size(&s->type);   // 0
+  Symbol *m1 = new_symbol("i", SYMBOL_KIND_VARIABLE);
+  m1->type   = (Type){TYPE_BASE_INT, NULL, -1};
+  m1->owner  = s;
+  m1->var_index = next_member_offset(s->struct_members, &m1->type);  // 0
   add_symbol_to_list(&s->struct_members, duplicate_symbol(m1));
   assert(m1->var_index == 0);
 
-  Symbol *m2    = new_symbol("d", SYMBOL_KIND_VARIABLE);
-  m2->type      = (Type){TYPE_BASE_DOUBLE, NULL, -1};
-  m2->owner     = s;
-  m2->var_index = type_size(&s->type);   // sizeof(int)
+  Symbol *m2 = new_symbol("d", SYMBOL_KIND_VARIABLE);
+  m2->type   = (Type){TYPE_BASE_DOUBLE, NULL, -1};
+  m2->owner  = s;
+  m2->var_index = next_member_offset(s->struct_members, &m2->type);  // align_up(0+4, 8) = 8
   add_symbol_to_list(&s->struct_members, duplicate_symbol(m2));
-  assert(m2->var_index == (int)sizeof(int));
+  assert(m2->var_index == align_up((int)sizeof(int), (int)sizeof(double)));
 
-  Symbol *m3    = new_symbol("c", SYMBOL_KIND_VARIABLE);
-  m3->type      = (Type){TYPE_BASE_CHAR, NULL, -1};
-  m3->owner     = s;
-  m3->var_index = type_size(&s->type);   // sizeof(int) + sizeof(double)
+  Symbol *m3 = new_symbol("c", SYMBOL_KIND_VARIABLE);
+  m3->type   = (Type){TYPE_BASE_CHAR, NULL, -1};
+  m3->owner  = s;
+  m3->var_index = next_member_offset(s->struct_members, &m3->type);  // align_up(8+8, 1) = 16
   add_symbol_to_list(&s->struct_members, duplicate_symbol(m3));
-  assert(m3->var_index == (int)(sizeof(int) + sizeof(double)));
+  assert(m3->var_index == align_up((int)sizeof(int), (int)sizeof(double)) + (int)sizeof(double));
 
-  printf(GREEN "Test 1 (byte offsets: 0, sizeof(int), sizeof(int)+sizeof(double)) passed\n" RESET);
+  printf(GREEN "Test 1 (aligned offsets: 0, 8, 16) passed\n" RESET);
 
-  assert(type_size(&s->type) == (int)(sizeof(int) + sizeof(double) + sizeof(char)));
-  printf(GREEN "Test 2 (total struct size correct) passed\n" RESET);
+  // Total = align_up(16+1, 8) = 24
+  int expected_total = align_up(
+      align_up((int)sizeof(int), (int)sizeof(double)) + (int)sizeof(double) + (int)sizeof(char),
+      (int)sizeof(double));
+  assert(type_size(&s->type) == expected_total);
+  printf(GREEN "Test 2 (total aligned size = 24) passed\n" RESET);
 
   free_symbol(m1);
   free_symbol(m2);
@@ -379,7 +397,80 @@ static void test_struct_member_offsets(void) {
 }
 
 // ============================================================
-// TEST 10: FUNCTION PARAMETER INDEXING
+// TEST 10: STRUCT ALIGNMENT EDGE CASES
+// ============================================================
+
+static Symbol *make_aligned_member(Symbol *owner, const char *name, TypeBase base) {
+  Symbol *mem  = new_symbol(name, SYMBOL_KIND_VARIABLE);
+  mem->type    = (Type){base, NULL, -1};
+  mem->owner   = owner;
+  mem->var_index = next_member_offset(owner->struct_members, &mem->type);
+  add_symbol_to_list(&owner->struct_members, duplicate_symbol(mem));
+  return mem;
+}
+
+static void test_struct_alignment_edge_cases(void) {
+  printf("Running test_struct_alignment_edge_cases...\n");
+
+  // Empty struct: size = 0
+  {
+    Symbol *s         = new_symbol("Empty", SYMBOL_KIND_STRUCT);
+    s->type           = (Type){TYPE_BASE_STRUCT, s, -1};
+    s->struct_members = NULL;
+    assert(type_size(&s->type) == 0);
+    free_symbol(s);
+  }
+  printf(GREEN "Test 1 (empty struct size = 0) passed\n" RESET);
+
+  // struct { char a; int b; }: a@0, b@4, total=8 (trailing pad to align 4)
+  {
+    Symbol *s         = new_symbol("CI", SYMBOL_KIND_STRUCT);
+    s->type           = (Type){TYPE_BASE_STRUCT, s, -1};
+    s->struct_members = NULL;
+    Symbol *ma = make_aligned_member(s, "a", TYPE_BASE_CHAR);
+    Symbol *mb = make_aligned_member(s, "b", TYPE_BASE_INT);
+    assert(ma->var_index == 0);
+    assert(mb->var_index == align_up((int)sizeof(char), (int)sizeof(int)));
+    assert(type_size(&s->type) == align_up(mb->var_index + (int)sizeof(int), (int)sizeof(int)));
+    free_symbol(ma); free_symbol(mb); free_symbol(s);
+  }
+  printf(GREEN "Test 2 (char+int: a@0, b@4, total=8) passed\n" RESET);
+
+  // struct { char a; char b; int c; }: a@0, b@1, c@4, total=8
+  {
+    Symbol *s         = new_symbol("CCI", SYMBOL_KIND_STRUCT);
+    s->type           = (Type){TYPE_BASE_STRUCT, s, -1};
+    s->struct_members = NULL;
+    Symbol *ma = make_aligned_member(s, "a", TYPE_BASE_CHAR);
+    Symbol *mb = make_aligned_member(s, "b", TYPE_BASE_CHAR);
+    Symbol *mc = make_aligned_member(s, "c", TYPE_BASE_INT);
+    assert(ma->var_index == 0);
+    assert(mb->var_index == (int)sizeof(char));
+    assert(mc->var_index == align_up(2 * (int)sizeof(char), (int)sizeof(int)));
+    assert(type_size(&s->type) == align_up(mc->var_index + (int)sizeof(int), (int)sizeof(int)));
+    free_symbol(ma); free_symbol(mb); free_symbol(mc); free_symbol(s);
+  }
+  printf(GREEN "Test 3 (char+char+int: a@0, b@1, c@4, total=8) passed\n" RESET);
+
+  // struct { int a; char b; }: a@0, b@4, total=8 (trailing pad raises 5 to 8)
+  {
+    Symbol *s         = new_symbol("IC", SYMBOL_KIND_STRUCT);
+    s->type           = (Type){TYPE_BASE_STRUCT, s, -1};
+    s->struct_members = NULL;
+    Symbol *ma = make_aligned_member(s, "a", TYPE_BASE_INT);
+    Symbol *mb = make_aligned_member(s, "b", TYPE_BASE_CHAR);
+    assert(ma->var_index == 0);
+    assert(mb->var_index == (int)sizeof(int));
+    assert(type_size(&s->type) == align_up((int)sizeof(int) + (int)sizeof(char), (int)sizeof(int)));
+    free_symbol(ma); free_symbol(mb); free_symbol(s);
+  }
+  printf(GREEN "Test 4 (int+char: a@0, b@4, total=8 with trailing pad) passed\n" RESET);
+
+  printf(GREEN "test_struct_alignment_edge_cases passed!\n" RESET);
+}
+
+// ============================================================
+// TEST 11: FUNCTION PARAMETER INDEXING
 // ============================================================
 
 static void test_function_parameter_indexing(void) {
@@ -661,6 +752,7 @@ int main(void) {
   test_cross_scope_search();
   test_type_size();
   test_struct_member_offsets();
+  test_struct_alignment_edge_cases();
   test_function_parameter_indexing();
   test_function_local_indexing();
   test_extern_function_registration();

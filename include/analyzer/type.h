@@ -29,6 +29,12 @@ int type_size(Type *type);
 
 int type_base_size(Type *type);
 
+// returns the natural alignment of a type in bytes
+int type_alignment(Type *type);
+
+// rounds offset up to the nearest multiple of alignment
+int align_up(int offset, int alignment);
+
 #include <stdio.h>
 
 void show_named_type(FILE *out, Type *type, const char *name);

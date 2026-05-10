@@ -166,10 +166,17 @@ bool variable_definition(ParserContext *ctx) {
         var->var_index = symbols_len(ctx->owner->function.locals);
         add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
         break;
-      case SYMBOL_KIND_STRUCT:
-        var->var_index = type_size(&ctx->owner->type);
+      case SYMBOL_KIND_STRUCT: {
+        Symbol *last       = ctx->owner->struct_members;
+        int     next_offset = 0;
+        if (last) {
+          while (last->next) { last = last->next; }
+          next_offset = last->var_index + type_size(&last->type);
+        }
+        var->var_index = align_up(next_offset, type_alignment(&var->type));
         add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
         break;
+      }
       default:
         break;
       }

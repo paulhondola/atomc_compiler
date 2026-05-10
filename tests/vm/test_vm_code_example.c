@@ -8,7 +8,7 @@ float sqrt(float x);
 // constantele cu zecimale sunt considerate float: 3.14, 7.0
 
 // test 1
-float f(int n, float s) {
+float f1(int n, float s) {
   int i = 0;
   while (i < n) {
     if (i % 2 == 0)
@@ -20,7 +20,7 @@ float f(int n, float s) {
 }
 
 // test 2
-int f(float v) {
+int f2(float v) {
   float v1 = random(), v2 = random();
   if (v == max3(v, v1, v2))
     return 0;
@@ -64,7 +64,7 @@ int ack(int m, int n) {
 }
 
 // test 6
-float f(float a, float b, float c) {
+float f6(float a, float b, float c) {
   float r = 4 * sqrt(a - b) / (c - b) - 1;
   while (r > a)
     r = r / 2;
@@ -96,7 +96,7 @@ int nd(int v) {
 }
 
 // test 9
-float f(float x, float y) {
+float f9(float x, float y) {
   if (x < y) {
     while (x < 0)
       x = x + 7;
@@ -107,7 +107,7 @@ float f(float x, float y) {
 }
 
 // test 10
-int g(int a, int b, float x) {
+int f10(int a, int b, float x) {
   if (a < b) {
     if (a < x && x < b)
       return 1;
@@ -119,7 +119,7 @@ int g(int a, int b, float x) {
 }
 
 // test 11
-float f(float x, float y, float z) {
+float f11(float x, float y, float z) {
   float d = sqrt(x * x + y * y + z * z);
   if (d < 10)
     return d / 10 + (x - y) / (z * 3 - 1);
@@ -159,7 +159,7 @@ int rnd(int min, int max) {
 }
 
 // test 15
-int f(float x, float y) {
+int f15(float x, float y) {
   int n = 0;
   while (x > y) {
     x = x - y;
@@ -184,7 +184,7 @@ int h(int a, int b) {
 }
 
 // test 17
-int f(int a, int b, int c) {
+int f17(int a, int b, int c) {
   int n = 0;
   while (max3(a, b, c) < 100) {
     a = a * 2;
@@ -195,7 +195,7 @@ int f(int a, int b, int c) {
 }
 
 // test 18
-int h(float x, float y, float z) {
+int h18(float x, float y, float z) {
   if (x < 0) {
     if (y == z)
       return 1;
@@ -207,7 +207,7 @@ int h(float x, float y, float z) {
 }
 
 // test 19
-int f(int x) {
+int f19(int x) {
   float r = x;
   int   i = 0;
   while (r > 10) {
@@ -218,7 +218,7 @@ int f(int x) {
 }
 
 // test 20
-int h(float a, float b, float c) {
+int h20(float a, float b, float c) {
   if ((a + b) * (c - a) + 1 > c / (2 + b))
     return 1;
   return sqrt(a + b + c);

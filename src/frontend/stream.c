@@ -10,7 +10,8 @@
 
 void token_stream_init(TokenStream *stream) {
   memset(stream, 0, sizeof(TokenStream));
-  stream->line = 1;
+  stream->line   = 1;
+  stream->output = stdout;
 }
 
 void token_stream_free(TokenStream *stream) {
@@ -26,11 +27,11 @@ void token_stream_free(TokenStream *stream) {
   memset(stream, 0, sizeof(TokenStream));
 }
 
-void token_stream_show(FILE *out, const TokenStream *stream) {
+void token_stream_show(const TokenStream *stream) {
   for (const Token *tk = stream->tokens.head; tk; tk = tk->next) {
-    fprintf(out, "%d\t", tk->line);
-    token_print_name(out, tk);
-    fprintf(out, "\n");
+    fprintf(stream->output, "%d\t", tk->line);
+    token_print_name(stream->output, tk);
+    fprintf(stream->output, "\n");
   }
 }
 

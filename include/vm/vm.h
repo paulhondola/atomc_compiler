@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdio.h>
+
 #include "instruction.h"
 
 struct DomainAnalyzer;
@@ -10,6 +12,7 @@ typedef struct VirtualMachine {
   StackCellValue  stack[VM_STACK_SIZE];
   StackCellValue *stack_pointer;
   StackCellValue *function_pointer;
+  FILE           *output;
 } VirtualMachine;
 
 // adds a new instruction to the end of list and sets its "op" field

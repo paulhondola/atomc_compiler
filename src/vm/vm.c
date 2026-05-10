@@ -48,7 +48,7 @@ void *pop_pointer(VirtualMachine *vm) {
 }
 
 void put_int(VirtualMachine *vm) {
-  printf("=> %d", pop_int(vm));
+  fprintf(vm->output, "=> %d", pop_int(vm));
 }
 
 void vm_init(DomainAnalyzer *da) {
@@ -64,24 +64,25 @@ void run(VirtualMachine *vm, Instruction *instruction_pointer) {
   void (*extern_function_pointer)(VirtualMachine *);
   for (;;) {
     // shows the index of the current instruction and the number of values from vm->stack
-    printf("%p/%d\t", (void *)instruction_pointer, (int)(vm->stack_pointer - vm->stack + 1));
+    fprintf(vm->output, "%p/%d\t", (void *)instruction_pointer,
+            (int)(vm->stack_pointer - vm->stack + 1));
     switch (instruction_pointer->opcode) {
       case OP_HALT:
-        printf("HALT");
+        fprintf(vm->output, "HALT");
         return;
       case OP_PUSH_I:
-        printf("PUSH.integer_value\t%d", instruction_pointer->argument.integer_value);
+        fprintf(vm->output, "PUSH.integer_value\t%d", instruction_pointer->argument.integer_value);
         push_int(vm, instruction_pointer->argument.integer_value);
         instruction_pointer = instruction_pointer->next;
         break;
       case OP_CALL:
         push_pointer(vm, instruction_pointer->next);
-        printf("CALL\t%p", (void *)instruction_pointer->argument.instruction_pointer);
+        fprintf(vm->output, "CALL\t%p", (void *)instruction_pointer->argument.instruction_pointer);
         instruction_pointer = instruction_pointer->argument.instruction_pointer;
         break;
       case OP_CALL_EXT:
         extern_function_pointer = instruction_pointer->argument.extern_function_pointer;
-        printf("CALL_EXT\t%p\n", (void *)extern_function_pointer);
+        fprintf(vm->output, "CALL_EXT\t%p\n", (void *)extern_function_pointer);
         extern_function_pointer(vm);
         instruction_pointer = instruction_pointer->next;
         break;
@@ -89,58 +90,62 @@ void run(VirtualMachine *vm, Instruction *instruction_pointer) {
         push_pointer(vm, vm->function_pointer);
         vm->function_pointer = vm->stack_pointer;
         vm->stack_pointer += instruction_pointer->argument.integer_value;
-        printf("ENTER\t%d", instruction_pointer->argument.integer_value);
+        fprintf(vm->output, "ENTER\t%d", instruction_pointer->argument.integer_value);
         instruction_pointer = instruction_pointer->next;
         break;
       case OP_RET_VOID:
         local_count = instruction_pointer->argument.integer_value;
-        printf("RET_VOID\t%d", local_count);
+        fprintf(vm->output, "RET_VOID\t%d", local_count);
         instruction_pointer  = vm->function_pointer[-1].pointer_value;
         vm->stack_pointer    = vm->function_pointer - local_count - 2;
         vm->function_pointer = vm->function_pointer[0].pointer_value;
         break;
       case OP_JMP:
-        printf("JMP\t%p", (void *)instruction_pointer->argument.instruction_pointer);
+        fprintf(vm->output, "JMP\t%p",
+                (void *)instruction_pointer->argument.instruction_pointer);
         instruction_pointer = instruction_pointer->argument.instruction_pointer;
         break;
       case OP_JF:
         rhs = pop_int(vm);
-        printf("JF\t%p\t// %d", (void *)instruction_pointer->argument.instruction_pointer, rhs);
+        fprintf(vm->output, "JF\t%p\t// %d",
+                (void *)instruction_pointer->argument.instruction_pointer, rhs);
         instruction_pointer =
             rhs ? instruction_pointer->next : instruction_pointer->argument.instruction_pointer;
         break;
       case OP_FPLOAD:
         stack_cell_value = vm->function_pointer[instruction_pointer->argument.integer_value];
         push_value(vm, stack_cell_value);
-        printf("FPLOAD\t%d\t// i:%d, f:%g", instruction_pointer->argument.integer_value,
-               stack_cell_value.integer_value, stack_cell_value.floating_point_value);
+        fprintf(vm->output, "FPLOAD\t%d\t// i:%d, f:%g",
+                instruction_pointer->argument.integer_value, stack_cell_value.integer_value,
+                stack_cell_value.floating_point_value);
         instruction_pointer = instruction_pointer->next;
         break;
       case OP_FPSTORE:
         stack_cell_value                                                  = pop_value(vm);
         vm->function_pointer[instruction_pointer->argument.integer_value] = stack_cell_value;
-        printf("FPSTORE\t%d\t// i:%d, f:%g", instruction_pointer->argument.integer_value,
-               stack_cell_value.integer_value, stack_cell_value.floating_point_value);
+        fprintf(vm->output, "FPSTORE\t%d\t// i:%d, f:%g",
+                instruction_pointer->argument.integer_value, stack_cell_value.integer_value,
+                stack_cell_value.floating_point_value);
         instruction_pointer = instruction_pointer->next;
         break;
       case OP_ADD_I:
         rhs = pop_int(vm);
         lhs = pop_int(vm);
         push_int(vm, lhs + rhs);
-        printf("ADD.integer_value\t// %d+%d -> %d", lhs, rhs, lhs + rhs);
+        fprintf(vm->output, "ADD.integer_value\t// %d+%d -> %d", lhs, rhs, lhs + rhs);
         instruction_pointer = instruction_pointer->next;
         break;
       case OP_LESS_I:
         rhs = pop_int(vm);
         lhs = pop_int(vm);
         push_int(vm, lhs < rhs);
-        printf("LESS.integer_value\t// %d<%d -> %d", lhs, rhs, lhs < rhs);
+        fprintf(vm->output, "LESS.integer_value\t// %d<%d -> %d", lhs, rhs, lhs < rhs);
         instruction_pointer = instruction_pointer->next;
         break;
       default:
         err("run: instructiune neimplementata: %d", instruction_pointer->opcode);
     }
-    putchar('\n');
+    fputc('\n', vm->output);
   }
 }
 
@@ -170,9 +175,9 @@ Instruction *gen_test_program(DomainAnalyzer *da) {
   Instruction *jfAfter = add_instruction(&code, OP_JF);
   // put_i(i);
   add_instruction_with_int(&code, OP_FPLOAD, 1);
-  Symbol *s = find_symbol(da, "put_i");
+  Symbol *s = find_symbol(da, "put_int");
   if (!s) {
-    err("undefined: put_i");
+    err("undefined: put_int");
   }
   add_instruction(&code, OP_CALL_EXT)->argument.extern_function_pointer =
       s->function.external_function_pointer;
@@ -191,4 +196,5 @@ Instruction *gen_test_program(DomainAnalyzer *da) {
 void vm_create(VirtualMachine *vm) {
   vm->stack_pointer    = vm->stack - 1;
   vm->function_pointer = NULL;
+  vm->output           = stdout;
 }

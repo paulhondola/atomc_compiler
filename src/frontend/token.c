@@ -76,6 +76,9 @@ void token_print_name(FILE *out, const Token *token) {
     case DIV:
       fprintf(out, "DIV");
       break;
+    case MOD:
+      fprintf(out, "MOD");
+      break;
     case AND:
       fprintf(out, "AND");
       break;
@@ -98,7 +101,7 @@ void token_print_name(FILE *out, const Token *token) {
       fprintf(out, "LESS");
       break;
     case LESSEQ:
-      printf("LESSEQ");
+      fprintf(out, "LESSEQ");
       break;
     case GREATER:
       fprintf(out, "GREATER");

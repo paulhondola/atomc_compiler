@@ -36,6 +36,7 @@ typedef enum : uint8_t {
   SUB,
   MUL,
   DIV,
+  MOD,
   DOT,
   AND,
   OR,

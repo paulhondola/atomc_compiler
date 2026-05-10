@@ -384,6 +384,10 @@ void tokenize(TokenStream *stream, const char *source_code) {
       case '/':
         source_code = consume_comment_or_div(stream, source_code);
         break;
+      case '%':
+        add_token(stream, MOD);
+        source_code++;
+        break;
       case '.':
         add_token(stream, DOT);
         source_code++;

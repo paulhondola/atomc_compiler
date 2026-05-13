@@ -8,7 +8,7 @@ float sqrt(float x);
 // constantele cu zecimale sunt considerate float: 3.14, 7.0
 
 // test 1
-float f1(int n, float s) {
+float test_1(int n, float s) {
   int i = 0;
   while (i < n) {
     if (i % 2 == 0)
@@ -20,7 +20,7 @@ float f1(int n, float s) {
 }
 
 // test 2
-int f2(float v) {
+int test_2(float v) {
   float v1 = random(), v2 = random();
   if (v == max3(v, v1, v2))
     return 0;
@@ -30,7 +30,7 @@ int f2(float v) {
 }
 
 // test 3
-int nSolutii(float a, float b, float c) {
+int test_3(float a, float b, float c) {
   float d2 = b * b - 4 * a * c;
   int   n;
   if (d2 < 0)
@@ -43,7 +43,7 @@ int nSolutii(float a, float b, float c) {
 }
 
 // test 4
-int fact(int n) {
+int test_4(int n) {
   if (n < 0)
     return 0;
   int i = 2, r = 1;
@@ -55,16 +55,16 @@ int fact(int n) {
 }
 
 // test 5
-int ack(int m, int n) {
+int test_5(int m, int n) {
   if (m == 0)
     return n + 1;
   else if (m > 0 && n == 0)
-    return ack(m - 1, 1);
-  return ack(m - 1, ack(m, n - 1));
+    return test_5(m - 1, 1);
+  return test_5(m - 1, test_5(m, n - 1));
 }
 
 // test 6
-float f6(float a, float b, float c) {
+float test_6(float a, float b, float c) {
   float r = 4 * sqrt(a - b) / (c - b) - 1;
   while (r > a)
     r = r / 2;
@@ -72,7 +72,7 @@ float f6(float a, float b, float c) {
 }
 
 // test 7
-int cnt(int v, int x, int y) {
+int test_7(int v, int x, int y) {
   if (x > y)
     return -1;
   int n = 0;
@@ -84,7 +84,7 @@ int cnt(int v, int x, int y) {
 }
 
 // test 8
-int nd(int v) {
+int test_8(int v) {
   int n = 0;
   if (v < 0)
     v = -v;
@@ -96,7 +96,7 @@ int nd(int v) {
 }
 
 // test 9
-float f9(float x, float y) {
+float test_9(float x, float y) {
   if (x < y) {
     while (x < 0)
       x = x + 7;
@@ -107,7 +107,7 @@ float f9(float x, float y) {
 }
 
 // test 10
-int f10(int a, int b, float x) {
+int test_10(int a, int b, float x) {
   if (a < b) {
     if (a < x && x < b)
       return 1;
@@ -119,7 +119,7 @@ int f10(int a, int b, float x) {
 }
 
 // test 11
-float f11(float x, float y, float z) {
+float test_11(float x, float y, float z) {
   float d = sqrt(x * x + y * y + z * z);
   if (d < 10)
     return d / 10 + (x - y) / (z * 3 - 1);
@@ -127,7 +127,7 @@ float f11(float x, float y, float z) {
 }
 
 // test 12
-int nc(int a, int b, int c) {
+int test_12(int a, int b, int c) {
   int d1 = a - b, d2 = a - c;
   while (d1 < d2) {
     if (a != d1)
@@ -138,7 +138,7 @@ int nc(int a, int b, int c) {
 }
 
 // test 13
-int ndiv(int n) {
+int test_13(int n) {
   int i = 2, c = 0;
   while (i <= n / 2) {
     if (n % i == 0)
@@ -149,9 +149,9 @@ int ndiv(int n) {
 }
 
 // test 14
-int rnd(int min, int max) {
+int test_14(int min, int max) {
   int v;
-  for (;;) {
+  while(1) {
     v = random();
     if (v >= min && v <= max)
       return v;
@@ -159,7 +159,7 @@ int rnd(int min, int max) {
 }
 
 // test 15
-int f15(float x, float y) {
+int test_15(float x, float y) {
   int n = 0;
   while (x > y) {
     x = x - y;
@@ -171,7 +171,7 @@ int f15(float x, float y) {
 }
 
 // test 16
-int h(int a, int b) {
+int test_16(int a, int b) {
   int   n;
   float f;
   while (a > b) {
@@ -184,7 +184,7 @@ int h(int a, int b) {
 }
 
 // test 17
-int f17(int a, int b, int c) {
+int test_17(int a, int b, int c) {
   int n = 0;
   while (max3(a, b, c) < 100) {
     a = a * 2;
@@ -195,7 +195,7 @@ int f17(int a, int b, int c) {
 }
 
 // test 18
-int h18(float x, float y, float z) {
+int test_18(float x, float y, float z) {
   if (x < 0) {
     if (y == z)
       return 1;
@@ -207,7 +207,7 @@ int h18(float x, float y, float z) {
 }
 
 // test 19
-int f19(int x) {
+int test_19(int x) {
   float r = x;
   int   i = 0;
   while (r > 10) {
@@ -218,7 +218,7 @@ int f19(int x) {
 }
 
 // test 20
-int h20(float a, float b, float c) {
+int test_20(float a, float b, float c) {
   if ((a + b) * (c - a) + 1 > c / (2 + b))
     return 1;
   return sqrt(a + b + c);

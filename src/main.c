@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
     VirtualMachine vm;
     vm_create(&vm);
     vm.output         = vm_out;
-    Instruction *code = gen_test_program(&domain_analyzer);
+    Instruction *code = gen_test_program_double(&domain_analyzer);
     run(&vm, code);
     drop_domain(&domain_analyzer);
   }

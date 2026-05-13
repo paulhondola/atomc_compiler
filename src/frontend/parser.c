@@ -405,11 +405,11 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after if");
     }
-    ReturnValue rCond;
-    if (!expression(ctx, &rCond)) {
+    ReturnValue right_condition;
+    if (!expression(ctx, &right_condition)) {
       token_stream_error(ctx->stream, "expected expression in if condition");
     }
-    if (!can_be_scalar(&rCond)) {
+    if (!can_be_scalar(&right_condition)) {
       token_stream_error(ctx->stream, "the if condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
@@ -429,11 +429,11 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after while");
     }
-    ReturnValue rCond;
-    if (!expression(ctx, &rCond)) {
+    ReturnValue right_condition;
+    if (!expression(ctx, &right_condition)) {
       token_stream_error(ctx->stream, "expected expression in while condition");
     }
-    if (!can_be_scalar(&rCond)) {
+    if (!can_be_scalar(&right_condition)) {
       token_stream_error(ctx->stream, "the while condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
@@ -445,15 +445,15 @@ bool stm_definition(ParserContext *ctx) {
     return true;
   }
   if (consume(ctx, RETURN)) {
-    ReturnValue rExpr;
-    if (expression(ctx, &rExpr)) {
+    ReturnValue right_expression;
+    if (expression(ctx, &right_expression)) {
       if (ctx->owner->type.type_base == TYPE_BASE_VOID) {
         token_stream_error(ctx->stream, "a void function cannot return a value");
       }
-      if (!can_be_scalar(&rExpr)) {
+      if (!can_be_scalar(&right_expression)) {
         token_stream_error(ctx->stream, "the return value must be a scalar value");
       }
-      if (!convert_to(&rExpr.type, &ctx->owner->type)) {
+      if (!convert_to(&right_expression.type, &ctx->owner->type)) {
         token_stream_error(ctx->stream,
                            "cannot convert the return expression type to the function return type");
       }

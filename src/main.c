@@ -7,10 +7,13 @@
 #include <string.h>
 #include <argtable3.h>
 
+#include "../include/analyzer/domain.h"
 #include "../include/analyzer/domain_analyzer.h"
+#include "../include/analyzer/symbol.h"
 #include "../include/frontend/lexer.h"
 #include "../include/frontend/parser.h"
 #include "../include/utils/utils.h"
+#include "../include/vm/instruction.h"
 #include "../include/vm/vm.h"
 
 int main(int argc, char *argv[]) {
@@ -98,20 +101,36 @@ int main(int argc, char *argv[]) {
   token_stream_show(&token_stream);
 
   push_domain(&domain_analyzer);
+  // Register host-side externs (put_int/put_double) in the global scope BEFORE
+  // parsing so AtomC source can call them as ordinary functions. The parser's
+  // primary-expression action emits OP_CALL_EXT when a symbol carries a
+  // non-null external_function_pointer.
+  vm_init(&domain_analyzer);
   parse(&token_stream, &domain_analyzer);
   show_domain(&domain_analyzer, "global");
-  drop_domain(&domain_analyzer);
 
   if (vm_file->count > 0) {
-    push_domain(&domain_analyzer);
-    vm_init(&domain_analyzer);
+    Symbol *sym_main =
+        find_symbol_in_domain(domain_analyzer.symbol_table, "main");
+    if (!sym_main || sym_main->kind != SYMBOL_KIND_FUNCTION) {
+      err("missing main function");
+    }
+    // Build the entry stub: CALL main; HALT. This is the only code path that
+    // gets executed at start-up — the spec mandates programs begin at main().
+    Instruction *entry_code = NULL;
+    add_instruction(&entry_code, OP_CALL)->argument.instruction_pointer =
+        sym_main->function.instruction;
+    add_instruction(&entry_code, OP_HALT);
+
     VirtualMachine vm;
     vm_create(&vm);
-    vm.output         = vm_out;
-    Instruction *code = gen_test_program_double(&domain_analyzer);
-    run(&vm, code);
-    drop_domain(&domain_analyzer);
+    vm.output = vm_out;
+    run(&vm, entry_code);
+
+    delete_instruction(entry_code);
   }
+
+  drop_domain(&domain_analyzer);
 
   if (token_out != stdout) {
     fclose(token_out);

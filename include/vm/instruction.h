@@ -110,3 +110,20 @@ struct Instruction {
   StackCellValue argument; // argument: varies depending on the opcode
   Instruction   *next;     // the link to the next instruction in list
 };
+
+// inserts a new instruction immediately after `before`, splicing it into the list.
+// `before` must not be NULL. Returns the inserted instruction.
+Instruction *insert_instruction(Instruction *before, Opcode opcode);
+
+// returns the last instruction in `list`, or NULL when `list` is empty.
+Instruction *get_last_instruction(Instruction *list);
+
+// frees every instruction in the chain rooted at `head` (head included).
+// Safe to call with head == NULL.
+void delete_instruction(Instruction *head);
+
+// truncates the chain after `after`: frees every instruction reachable from
+// `after->next` and sets `after->next = NULL`. If `after` is NULL the call is
+// a no-op (callers use this to mean "the list was empty at snapshot time" —
+// see the parser's backtracking).
+void delete_instructions_after(Instruction *after);

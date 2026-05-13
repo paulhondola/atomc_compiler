@@ -65,7 +65,6 @@ void put_int(VirtualMachine *vm) {
   fprintf(vm->output, "=> %d", pop_int(vm));
 }
 
-// put_d in the lab spec; named put_double here to match project convention (put_int)
 void put_double(VirtualMachine *vm) {
   fprintf(vm->output, "=> %g", pop_double(vm));
 }
@@ -81,11 +80,13 @@ void vm_init(DomainAnalyzer *da) {
 
 void run(VirtualMachine *vm, Instruction *instruction_pointer) {
   StackCellValue stack_cell_value;
+  StackCellValue return_value;
   int            local_count;
   int            rhs_int;
   int            lhs_int;
   double         rhs_double;
   double         lhs_double;
+  void          *address;
   void (*extern_function_pointer)(VirtualMachine *);
   for (;;) {
     // shows the index of the current instruction and the number of values from vm->stack
@@ -184,6 +185,134 @@ void run(VirtualMachine *vm, Instruction *instruction_pointer) {
         lhs_double = pop_double(vm);
         push_int(vm, lhs_double < rhs_double);
         fprintf(vm->output, "LESS.f\t// %g<%g -> %d", lhs_double, rhs_double, lhs_double < rhs_double);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_RET:
+        local_count          = instruction_pointer->argument.integer_value;
+        return_value         = pop_value(vm);
+        fprintf(vm->output, "RET\t%d", local_count);
+        instruction_pointer  = vm->function_pointer[-1].pointer_value;
+        vm->stack_pointer    = vm->function_pointer - local_count - 2;
+        vm->function_pointer = vm->function_pointer[0].pointer_value;
+        push_value(vm, return_value);
+        break;
+      case OP_JT:
+        rhs_int = pop_int(vm);
+        fprintf(vm->output, "JT\t%p\t// %d",
+                (void *)instruction_pointer->argument.instruction_pointer, rhs_int);
+        instruction_pointer =
+            rhs_int ? instruction_pointer->argument.instruction_pointer : instruction_pointer->next;
+        break;
+      case OP_CONV_I_F:
+        lhs_int = pop_int(vm);
+        push_double(vm, (double)lhs_int);
+        fprintf(vm->output, "CONV.i.f\t// %d -> %g", lhs_int, (double)lhs_int);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_CONV_F_I:
+        lhs_double = pop_double(vm);
+        push_int(vm, (int)lhs_double);
+        fprintf(vm->output, "CONV.f.i\t// %g -> %d", lhs_double, (int)lhs_double);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_LOAD_I:
+        address = pop_pointer(vm);
+        push_int(vm, *(int *)address);
+        fprintf(vm->output, "LOAD.i\t// [%p] -> %d", address, *(int *)address);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_LOAD_F:
+        address = pop_pointer(vm);
+        push_double(vm, *(double *)address);
+        fprintf(vm->output, "LOAD.f\t// [%p] -> %g", address, *(double *)address);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_STORE_I:
+        rhs_int           = pop_int(vm);
+        address           = pop_pointer(vm);
+        *(int *)address   = rhs_int;
+        push_int(vm, rhs_int);
+        fprintf(vm->output, "STORE.i\t// %d -> [%p]", rhs_int, address);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_STORE_F:
+        rhs_double          = pop_double(vm);
+        address             = pop_pointer(vm);
+        *(double *)address  = rhs_double;
+        push_double(vm, rhs_double);
+        fprintf(vm->output, "STORE.f\t// %g -> [%p]", rhs_double, address);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_ADDR:
+        push_pointer(vm, instruction_pointer->argument.pointer_value);
+        fprintf(vm->output, "ADDR\t%p", instruction_pointer->argument.pointer_value);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_FPADDR_I:
+        push_pointer(vm,
+                     &vm->function_pointer[instruction_pointer->argument.integer_value].integer_value);
+        fprintf(vm->output, "FPADDR.i\t%d", instruction_pointer->argument.integer_value);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_FPADDR_F:
+        push_pointer(
+            vm,
+            &vm->function_pointer[instruction_pointer->argument.integer_value].floating_point_value);
+        fprintf(vm->output, "FPADDR.f\t%d", instruction_pointer->argument.integer_value);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_SUB_I:
+        rhs_int = pop_int(vm);
+        lhs_int = pop_int(vm);
+        push_int(vm, lhs_int - rhs_int);
+        fprintf(vm->output, "SUB.i\t// %d-%d -> %d", lhs_int, rhs_int, lhs_int - rhs_int);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_SUB_F:
+        rhs_double = pop_double(vm);
+        lhs_double = pop_double(vm);
+        push_double(vm, lhs_double - rhs_double);
+        fprintf(vm->output, "SUB.f\t// %g-%g -> %g", lhs_double, rhs_double, lhs_double - rhs_double);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_MUL_I:
+        rhs_int = pop_int(vm);
+        lhs_int = pop_int(vm);
+        push_int(vm, lhs_int * rhs_int);
+        fprintf(vm->output, "MUL.i\t// %d*%d -> %d", lhs_int, rhs_int, lhs_int * rhs_int);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_MUL_F:
+        rhs_double = pop_double(vm);
+        lhs_double = pop_double(vm);
+        push_double(vm, lhs_double * rhs_double);
+        fprintf(vm->output, "MUL.f\t// %g*%g -> %g", lhs_double, rhs_double, lhs_double * rhs_double);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_DIV_I:
+        rhs_int = pop_int(vm);
+        lhs_int = pop_int(vm);
+        if (rhs_int == 0) {
+          err("run: integer division by zero");
+        }
+        push_int(vm, lhs_int / rhs_int);
+        fprintf(vm->output, "DIV.i\t// %d/%d -> %d", lhs_int, rhs_int, lhs_int / rhs_int);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_DIV_F:
+        rhs_double = pop_double(vm);
+        lhs_double = pop_double(vm);
+        push_double(vm, lhs_double / rhs_double);
+        fprintf(vm->output, "DIV.f\t// %g/%g -> %g", lhs_double, rhs_double, lhs_double / rhs_double);
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_DROP:
+        (void)pop_value(vm);
+        fprintf(vm->output, "DROP");
+        instruction_pointer = instruction_pointer->next;
+        break;
+      case OP_NOP:
+        fprintf(vm->output, "NOP");
         instruction_pointer = instruction_pointer->next;
         break;
       default:

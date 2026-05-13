@@ -21,6 +21,7 @@ src_files = files(
     'src/analyzer/type_analyzer.c',
     'src/vm/instruction.c',
     'src/vm/vm.c',
+    'src/vm/code_generator.c',
 )
 
 inc_dir = include_directories('include')

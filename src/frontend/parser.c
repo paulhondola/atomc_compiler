@@ -128,7 +128,8 @@ bool struct_definition(ParserContext *ctx) {
   return false;
 }
 
-// varDef: typeBase ID arrayDecl? SEMICOLON
+// varDef: typeBase varDeclarator ( COMMA varDeclarator )* SEMICOLON
+// varDeclarator: ID arrayDecl? ( ASSIGN expr )?
 bool variable_definition(ParserContext *ctx) {
   const Token *type_start = ctx->stream->tokens.iterator;
   Type t;
@@ -141,41 +142,70 @@ bool variable_definition(ParserContext *ctx) {
                        token_type_base_name(type_start, buf, sizeof(buf)));
   }
   Token *tk_name = ctx->stream->tokens.consumed;
-  if (array_declaration(ctx, &t)) {
-    if (t.array_dimension == 0) {
-      token_stream_error(ctx->stream, "a vector variable must have a specified dimension");
+
+  for (;;) {
+    Type vt = t;
+    if (array_declaration(ctx, &vt)) {
+      if (vt.array_dimension == 0) {
+        token_stream_error(ctx->stream, "a vector variable must have a specified dimension");
+      }
     }
+
+    Symbol *var = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
+    if (var) {
+      token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+    }
+    var        = new_symbol(tk_name->text, SYMBOL_KIND_VARIABLE);
+    var->type  = vt;
+    var->owner = ctx->owner;
+    add_symbol_to_domain(ctx->domain_analyzer->symbol_table, var);
+
+    if (ctx->owner) {
+      switch (ctx->owner->kind) {
+      case SYMBOL_KIND_FUNCTION:
+        var->var_index = symbols_len(ctx->owner->function.locals);
+        add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
+        break;
+      case SYMBOL_KIND_STRUCT: {
+        Symbol *last       = ctx->owner->struct_members;
+        int     next_offset = 0;
+        if (last) {
+          while (last->next) { last = last->next; }
+          next_offset = last->var_index + type_size(&last->type);
+        }
+        var->var_index = align_up(next_offset, type_alignment(&var->type));
+        add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
+        break;
+      }
+      default:
+        break;
+      }
+    } else {
+      var->var_mem = safe_alloc(type_size(&vt));
+    }
+
+    if (consume(ctx, ASSIGN)) {
+      ReturnValue init;
+      if (!expression(ctx, &init)) {
+        token_stream_error(ctx->stream, "expected expression after =");
+      }
+      if (!convert_to(&init.type, &vt)) {
+        token_stream_error(ctx->stream, "incompatible types in variable initializer");
+      }
+    }
+
+    if (!consume(ctx, COMMA)) {
+      break;
+    }
+    if (!consume(ctx, ID)) {
+      token_stream_error(ctx->stream, "expected identifier after ,");
+    }
+    tk_name = ctx->stream->tokens.consumed;
   }
+
   if (!consume(ctx, SEMICOLON)) {
     token_stream_error(ctx->stream, "expected ; after variable definition");
   }
-
-  Symbol *var = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
-  if (var) {
-    token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
-  }
-  var        = new_symbol(tk_name->text, SYMBOL_KIND_VARIABLE);
-  var->type  = t;
-  var->owner = ctx->owner;
-  add_symbol_to_domain(ctx->domain_analyzer->symbol_table, var);
-
-  if (ctx->owner) {
-    switch (ctx->owner->kind) {
-    case SYMBOL_KIND_FUNCTION:
-      var->var_index = symbols_len(ctx->owner->function.locals);
-      add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
-      break;
-    case SYMBOL_KIND_STRUCT:
-      var->var_index = type_size(&ctx->owner->type);
-      add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
-      break;
-    default:
-      break;
-    }
-  } else {
-    var->var_mem = safe_alloc(type_size(&t));
-  }
-
   return true;
 }
 
@@ -192,6 +222,10 @@ bool type_base(ParserContext *ctx, Type *t) {
   }
   if (consume(ctx, TYPE_CHAR)) {
     t->type_base = TYPE_BASE_CHAR;
+    return true;
+  }
+  if (consume(ctx, TYPE_FLOAT)) {
+    t->type_base = TYPE_BASE_DOUBLE;
     return true;
   }
   if (consume(ctx, STRUCT)) {
@@ -231,12 +265,19 @@ bool function_definition(ParserContext *ctx) {
 
   Symbol *fn = find_symbol_in_domain(ctx->domain_analyzer->symbol_table, tk_name->text);
   if (fn) {
-    token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+    if (fn->kind != SYMBOL_KIND_FUNCTION || !fn->function.is_declaration) {
+      token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
+    }
+    // defining a previously declared prototype — re-use the existing symbol,
+    // clearing the prototype's parameter list so it can be re-parsed cleanly
+    free_symbols(fn->function.parameters);
+    fn->function.parameters = NULL;
+  } else {
+    fn        = new_symbol(tk_name->text, SYMBOL_KIND_FUNCTION);
+    fn->type  = t;
+    fn->owner = NULL;
+    add_symbol_to_domain(ctx->domain_analyzer->symbol_table, fn);
   }
-  fn             = new_symbol(tk_name->text, SYMBOL_KIND_FUNCTION);
-  fn->type       = t;
-  fn->owner      = NULL; // global function
-  add_symbol_to_domain(ctx->domain_analyzer->symbol_table, fn);
   ctx->owner = fn;
   push_domain(ctx->domain_analyzer);
 
@@ -258,9 +299,17 @@ bool function_definition(ParserContext *ctx) {
     }
     token_stream_error(ctx->stream, "expected ) after function parameters");
   }
-  if (!stm_compound_definition(ctx, false)) {
-    token_stream_error(ctx->stream, "expected function body");
+  if (consume(ctx, SEMICOLON)) {
+    // prototype: no body
+    fn->function.is_declaration = true;
+    drop_domain(ctx->domain_analyzer);
+    ctx->owner = NULL;
+    return true;
   }
+  if (!stm_compound_definition(ctx, false)) {
+    token_stream_error(ctx->stream, "expected function body or ; after parameter list");
+  }
+  fn->function.is_declaration = false;
 
   drop_domain(ctx->domain_analyzer);
   ctx->owner = NULL;
@@ -356,11 +405,11 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after if");
     }
-    ReturnValue rCond;
-    if (!expression(ctx, &rCond)) {
+    ReturnValue right_condition;
+    if (!expression(ctx, &right_condition)) {
       token_stream_error(ctx->stream, "expected expression in if condition");
     }
-    if (!can_be_scalar(&rCond)) {
+    if (!can_be_scalar(&right_condition)) {
       token_stream_error(ctx->stream, "the if condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
@@ -380,11 +429,11 @@ bool stm_definition(ParserContext *ctx) {
     if (!consume(ctx, LPAR)) {
       token_stream_error(ctx->stream, "expected ( after while");
     }
-    ReturnValue rCond;
-    if (!expression(ctx, &rCond)) {
+    ReturnValue right_condition;
+    if (!expression(ctx, &right_condition)) {
       token_stream_error(ctx->stream, "expected expression in while condition");
     }
-    if (!can_be_scalar(&rCond)) {
+    if (!can_be_scalar(&right_condition)) {
       token_stream_error(ctx->stream, "the while condition must be a scalar value");
     }
     if (!consume(ctx, RPAR)) {
@@ -396,15 +445,15 @@ bool stm_definition(ParserContext *ctx) {
     return true;
   }
   if (consume(ctx, RETURN)) {
-    ReturnValue rExpr;
-    if (expression(ctx, &rExpr)) {
+    ReturnValue right_expression;
+    if (expression(ctx, &right_expression)) {
       if (ctx->owner->type.type_base == TYPE_BASE_VOID) {
         token_stream_error(ctx->stream, "a void function cannot return a value");
       }
-      if (!can_be_scalar(&rExpr)) {
+      if (!can_be_scalar(&right_expression)) {
         token_stream_error(ctx->stream, "the return value must be a scalar value");
       }
-      if (!convert_to(&rExpr.type, &ctx->owner->type)) {
+      if (!convert_to(&right_expression.type, &ctx->owner->type)) {
         token_stream_error(ctx->stream,
                            "cannot convert the return expression type to the function return type");
       }
@@ -591,15 +640,15 @@ bool multiplication_expression(ParserContext *ctx, ReturnValue *r) {
     return false;
   }
   TokenType op;
-  while ((op = ctx->stream->tokens.iterator->type) == MUL || op == DIV) {
+  while ((op = ctx->stream->tokens.iterator->type) == MUL || op == DIV || op == MOD) {
     consume(ctx, op);
     ReturnValue right;
     if (!cast_expression(ctx, &right)) {
-      token_stream_error(ctx->stream, "expected expression after * or /");
+      token_stream_error(ctx->stream, "expected expression after *, /, or %%");
     }
     Type tDst;
     if (!arithmetic_type_to(&r->type, &right.type, &tDst)) {
-      token_stream_error(ctx->stream, "invalid operand type for * or /");
+      token_stream_error(ctx->stream, "invalid operand type for *, /, or %%");
     }
     r->type          = tDst;
     r->is_left_value = false;

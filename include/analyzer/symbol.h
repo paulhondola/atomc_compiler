@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "../vm/instruction.h"
@@ -41,6 +42,7 @@ struct Symbol {
     struct {
       Symbol *parameters; // the parameters of a function
       Symbol *locals;     // all local vars of a function, including the ones from its inner domains
+      bool    is_declaration; // true = prototype only, body not yet parsed
       void (*external_function_pointer)(struct VirtualMachine *); // !=NULL for extern functions
       Instruction *instruction; // used if external_function_pointer==NULL
     } function;

@@ -191,6 +191,9 @@ const char *consume_identifier_or_keyword(TokenStream *stream, const char *sourc
   } else if (strcmp(text, "char") == 0) {
     free(text);
     add_token(stream, TYPE_CHAR);
+  } else if (strcmp(text, "float") == 0) {
+    free(text);
+    add_token(stream, TYPE_FLOAT);
   } else {
     // add the identifier token
     Token *token = add_token(stream, ID);
@@ -383,6 +386,10 @@ void tokenize(TokenStream *stream, const char *source_code) {
         break;
       case '/':
         source_code = consume_comment_or_div(stream, source_code);
+        break;
+      case '%':
+        add_token(stream, MOD);
+        source_code++;
         break;
       case '.':
         add_token(stream, DOT);

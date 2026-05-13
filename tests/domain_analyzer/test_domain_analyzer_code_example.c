@@ -11,7 +11,13 @@ struct S1{
 struct S1 p1;
 struct S1 vp[10];
 
-double sum(double x[5],int n){
+struct TEST{
+    int i;
+    char c;
+    int d;
+};
+
+double sum(double x[5], int n){
 	double r;
 	int i;
 	r=0;

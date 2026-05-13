@@ -410,9 +410,12 @@ static void test_parser_error_syntax(void) {
   assert(exits_with_error("void f() { while (1 ; }"));
   printf(GREEN "Test 6 (missing ) after while condition → error) passed\n" RESET);
 
-  // Missing function body (function declaration without braces)
-  assert(exits_with_error("void f();"));
-  printf(GREEN "Test 7 (function without body → error) passed\n" RESET);
+  // Prototype is valid; redefinition after a full definition must still error
+  assert(!exits_with_error("void f();"));
+  printf(GREEN "Test 7 (prototype without body → valid) passed\n" RESET);
+
+  assert(exits_with_error("void f() {} void f() {}"));
+  printf(GREEN "Test 7b (duplicate full definition → error) passed\n" RESET);
 
   // Missing ; after struct definition
   assert(exits_with_error("struct S {}"));

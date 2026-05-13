@@ -9,6 +9,7 @@
 
 void domain_analyzer_init(DomainAnalyzer *da) {
   da->symbol_table = NULL;
+  da->output       = stdout;
 }
 
 void domain_analyzer_free(DomainAnalyzer *da) {

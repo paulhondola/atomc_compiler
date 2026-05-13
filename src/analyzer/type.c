@@ -2,6 +2,27 @@
 
 #include "../../include/analyzer/symbol.h"
 
+int align_up(int offset, int alignment) {
+  return (offset + alignment - 1) & ~(alignment - 1);
+}
+
+int type_alignment(Type *type) {
+  switch (type->type_base) {
+    case TYPE_BASE_INT:    return (int)sizeof(int);
+    case TYPE_BASE_DOUBLE: return (int)sizeof(double);
+    case TYPE_BASE_CHAR:   return (int)sizeof(char);
+    case TYPE_BASE_VOID:   return 1;
+    default: { // TYPE_BASE_STRUCT: alignment = max member alignment
+      int max_align = 1;
+      for (Symbol *sym = type->symbol->struct_members; sym; sym = sym->next) {
+        int align = type_alignment(&sym->type);
+        if (align > max_align) { max_align = align; }
+      }
+      return max_align;
+    }
+  }
+}
+
 int type_base_size(Type *type) {
   switch (type->type_base) {
     case TYPE_BASE_INT:
@@ -13,11 +34,15 @@ int type_base_size(Type *type) {
     case TYPE_BASE_VOID:
       return 0;
     default: { // TYPE_BASE_STRUCT
-      int size = 0;
+      int offset    = 0;
+      int max_align = 1;
       for (Symbol *symbol = type->symbol->struct_members; symbol; symbol = symbol->next) {
-        size += type_size(&symbol->type);
+        int align = type_alignment(&symbol->type);
+        if (align > max_align) { max_align = align; }
+        offset = align_up(offset, align);
+        offset += type_size(&symbol->type);
       }
-      return size;
+      return align_up(offset, max_align);
     }
   }
 }

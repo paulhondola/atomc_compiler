@@ -1,11 +1,14 @@
 #pragma once
 
+#include <stdio.h>
+
 #include "symbol.h"
 #include "domain.h"
 
 // context encapsulating all domain/scope analysis state
 typedef struct DomainAnalyzer {
   Domain *symbol_table; // the top (current) domain in the scope stack
+  FILE   *output;       // destination for show_domain
 } DomainAnalyzer;
 
 // initialises a DomainAnalyzer to an empty state

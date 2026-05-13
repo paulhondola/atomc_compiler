@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
 
 struct Symbol;
 typedef struct Symbol Symbol;
@@ -29,6 +30,11 @@ int type_size(Type *type);
 
 int type_base_size(Type *type);
 
-#include <stdio.h>
+// returns the natural alignment of a type in bytes
+int type_alignment(Type *type);
 
+// rounds offset up to the nearest multiple of alignment
+int align_up(int offset, int alignment);
+
+// prints a named type to the given file
 void show_named_type(FILE *out, Type *type, const char *name);

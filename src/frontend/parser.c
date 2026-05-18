@@ -5,12 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../../include/frontend/token.h"
-#include "../../include/utils/utils.h"
-#include "../../include/analyzer/domain_analyzer.h"
 #include "../../include/analyzer/domain.h"
+#include "../../include/analyzer/domain_analyzer.h"
 #include "../../include/analyzer/symbol.h"
 #include "../../include/analyzer/type_analyzer.h"
+#include "../../include/frontend/token.h"
+#include "../../include/utils/utils.h"
 #include "../../include/vm/code_generator.h"
 #include "../../include/vm/instruction.h"
 
@@ -107,10 +107,10 @@ bool struct_definition(ParserContext *ctx) {
         if (s) {
           token_stream_error(ctx->stream, "symbol redefinition: %s", tk_name->text);
         }
-        s = add_symbol_to_domain(ctx->domain_analyzer->symbol_table,
-                                 new_symbol(tk_name->text, SYMBOL_KIND_STRUCT));
-        s->type.type_base      = TYPE_BASE_STRUCT;
-        s->type.symbol         = s;
+        s                       = add_symbol_to_domain(ctx->domain_analyzer->symbol_table,
+                                                       new_symbol(tk_name->text, SYMBOL_KIND_STRUCT));
+        s->type.type_base       = TYPE_BASE_STRUCT;
+        s->type.symbol          = s;
         s->type.array_dimension = -1;
 
         push_domain(ctx->domain_analyzer);
@@ -146,7 +146,7 @@ bool struct_definition(ParserContext *ctx) {
 // varDeclarator: ID arrayDecl? ( ASSIGN expr )?
 bool variable_definition(ParserContext *ctx) {
   const Token *type_start = ctx->stream->tokens.iterator;
-  Type t;
+  Type         t;
   if (!type_base(ctx, &t)) {
     return false;
   }
@@ -176,23 +176,25 @@ bool variable_definition(ParserContext *ctx) {
 
     if (ctx->owner) {
       switch (ctx->owner->kind) {
-      case SYMBOL_KIND_FUNCTION:
-        var->var_index = symbols_len(ctx->owner->function.locals);
-        add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
-        break;
-      case SYMBOL_KIND_STRUCT: {
-        Symbol *last       = ctx->owner->struct_members;
-        int     next_offset = 0;
-        if (last) {
-          while (last->next) { last = last->next; }
-          next_offset = last->var_index + type_size(&last->type);
+        case SYMBOL_KIND_FUNCTION:
+          var->var_index = symbols_len(ctx->owner->function.locals);
+          add_symbol_to_list(&ctx->owner->function.locals, duplicate_symbol(var));
+          break;
+        case SYMBOL_KIND_STRUCT: {
+          Symbol *last        = ctx->owner->struct_members;
+          int     next_offset = 0;
+          if (last) {
+            while (last->next) {
+              last = last->next;
+            }
+            next_offset = last->var_index + type_size(&last->type);
+          }
+          var->var_index = align_up(next_offset, type_alignment(&var->type));
+          add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
+          break;
         }
-        var->var_index = align_up(next_offset, type_alignment(&var->type));
-        add_symbol_to_list(&ctx->owner->struct_members, duplicate_symbol(var));
-        break;
-      }
-      default:
-        break;
+        default:
+          break;
       }
     } else {
       var->var_mem = safe_alloc(type_size(&vt));
@@ -205,8 +207,7 @@ bool variable_definition(ParserContext *ctx) {
       // the result. Globals get no init codegen (var_mem is zero-initialised).
       Instruction **code = current_function_code(ctx);
       if (code && ctx->owner && ctx->owner->kind == SYMBOL_KIND_FUNCTION) {
-        Opcode addr_op =
-            vt.type_base == TYPE_BASE_DOUBLE ? OP_FPADDR_F : OP_FPADDR_I;
+        Opcode addr_op = vt.type_base == TYPE_BASE_DOUBLE ? OP_FPADDR_F : OP_FPADDR_I;
         add_instruction_with_int(code, addr_op, var->var_index + 1);
       }
       ReturnValue init;
@@ -219,8 +220,7 @@ bool variable_definition(ParserContext *ctx) {
       if (code && ctx->owner && ctx->owner->kind == SYMBOL_KIND_FUNCTION) {
         add_rval(code, init.is_left_value, &init.type);
         insert_conversion_if_needed(get_last_instruction(*code), &init.type, &vt);
-        add_instruction(code,
-                        vt.type_base == TYPE_BASE_DOUBLE ? OP_STORE_F : OP_STORE_I);
+        add_instruction(code, vt.type_base == TYPE_BASE_DOUBLE ? OP_STORE_F : OP_STORE_I);
         add_instruction(code, OP_DROP);
       }
     }
@@ -278,7 +278,7 @@ bool type_base(ParserContext *ctx, Type *t) {
 // stmCompound
 bool function_definition(ParserContext *ctx) {
   Token *start = ctx->stream->tokens.iterator;
-  Type t;
+  Type   t;
   if (consume(ctx, VOID)) {
     t.type_base = TYPE_BASE_VOID;
   } else if (!type_base(ctx, &t)) {
@@ -465,13 +465,12 @@ bool stm_definition(ParserContext *ctx) {
     }
 
     // codegen: condition rvalue → coerce to int → JF over the then-branch.
-    Instruction **code      = current_function_code(ctx);
-    Instruction  *if_jf     = NULL;
+    Instruction **code  = current_function_code(ctx);
+    Instruction  *if_jf = NULL;
     if (code) {
       add_rval(code, right_condition.is_left_value, &right_condition.type);
       Type int_type = {TYPE_BASE_INT, NULL, -1};
-      insert_conversion_if_needed(get_last_instruction(*code), &right_condition.type,
-                                  &int_type);
+      insert_conversion_if_needed(get_last_instruction(*code), &right_condition.type, &int_type);
       if_jf = add_instruction(code, OP_JF);
     }
 
@@ -521,8 +520,7 @@ bool stm_definition(ParserContext *ctx) {
     if (code) {
       add_rval(code, right_condition.is_left_value, &right_condition.type);
       Type int_type = {TYPE_BASE_INT, NULL, -1};
-      insert_conversion_if_needed(get_last_instruction(*code), &right_condition.type,
-                                  &int_type);
+      insert_conversion_if_needed(get_last_instruction(*code), &right_condition.type, &int_type);
       while_jf = add_instruction(code, OP_JF);
     }
 
@@ -533,8 +531,7 @@ bool stm_definition(ParserContext *ctx) {
     if (code) {
       // Back-edge to the first instruction of the condition.
       Instruction *back_jmp                  = add_instruction(code, OP_JMP);
-      back_jmp->argument.instruction_pointer =
-          before_while_cond ? before_while_cond->next : *code;
+      back_jmp->argument.instruction_pointer = before_while_cond ? before_while_cond->next : *code;
       while_jf->argument.instruction_pointer = add_instruction(code, OP_NOP);
     }
     return true;
@@ -557,16 +554,14 @@ bool stm_definition(ParserContext *ctx) {
         add_rval(code, right_expression.is_left_value, &right_expression.type);
         insert_conversion_if_needed(get_last_instruction(*code), &right_expression.type,
                                     &ctx->owner->type);
-        add_instruction_with_int(code, OP_RET,
-                                 symbols_len(ctx->owner->function.parameters));
+        add_instruction_with_int(code, OP_RET, symbols_len(ctx->owner->function.parameters));
       }
     } else {
       if (ctx->owner->type.type_base != TYPE_BASE_VOID) {
         token_stream_error(ctx->stream, "a non-void function must return a value");
       }
       if (code) {
-        add_instruction_with_int(code, OP_RET_VOID,
-                                 symbols_len(ctx->owner->function.parameters));
+        add_instruction_with_int(code, OP_RET_VOID, symbols_len(ctx->owner->function.parameters));
       }
     }
     if (!consume(ctx, SEMICOLON)) {
@@ -725,8 +720,8 @@ bool relational_expression(ParserContext *ctx, ReturnValue *r) {
     return false;
   }
   TokenType op;
-  while ((op = ctx->stream->tokens.iterator->type) == LESS || op == LESSEQ ||
-         op == GREATER || op == GREATEREQ) {
+  while ((op = ctx->stream->tokens.iterator->type) == LESS || op == LESSEQ || op == GREATER ||
+         op == GREATEREQ) {
     Instruction **code      = current_function_code(ctx);
     Instruction  *last_left = NULL;
     if (code) {
@@ -736,8 +731,7 @@ bool relational_expression(ParserContext *ctx, ReturnValue *r) {
     consume(ctx, op);
     ReturnValue right;
     if (!addition_expression(ctx, &right)) {
-      const char *sym =
-          op == LESS ? "<" : op == LESSEQ ? "<=" : op == GREATER ? ">" : ">=";
+      const char *sym = op == LESS ? "<" : op == LESSEQ ? "<=" : op == GREATER ? ">" : ">=";
       token_stream_error(ctx->stream, "expected expression after '%s'", sym);
     }
     Type tDst;
@@ -972,9 +966,8 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
           token_stream_error(ctx->stream, "too many arguments in function call");
         }
         if (!convert_to(&rArg.type, &param->type)) {
-          token_stream_error(
-              ctx->stream,
-              "in call, cannot convert the argument type to the parameter type");
+          token_stream_error(ctx->stream,
+                             "in call, cannot convert the argument type to the parameter type");
         }
         if (code) {
           add_rval(code, rArg.is_left_value, &rArg.type);
@@ -989,9 +982,8 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
             token_stream_error(ctx->stream, "too many arguments in function call");
           }
           if (!convert_to(&rArg.type, &param->type)) {
-            token_stream_error(
-                ctx->stream,
-                "in call, cannot convert the argument type to the parameter type");
+            token_stream_error(ctx->stream,
+                               "in call, cannot convert the argument type to the parameter type");
           }
           if (code) {
             add_rval(code, rArg.is_left_value, &rArg.type);
@@ -1013,8 +1005,7 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
           add_instruction(code, OP_CALL_EXT)->argument.extern_function_pointer =
               s->function.external_function_pointer;
         } else {
-          add_instruction(code, OP_CALL)->argument.instruction_pointer =
-              s->function.instruction;
+          add_instruction(code, OP_CALL)->argument.instruction_pointer = s->function.instruction;
         }
       }
       r->type          = s->type;
@@ -1029,8 +1020,7 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
       // params use OP_FPADDR_* (frame-pointer-relative). The caller decides
       // whether to dereference (add_rval) or store through it (assignment).
       if (code) {
-        Opcode addr_op =
-            s->type.type_base == TYPE_BASE_DOUBLE ? OP_FPADDR_F : OP_FPADDR_I;
+        Opcode addr_op = s->type.type_base == TYPE_BASE_DOUBLE ? OP_FPADDR_F : OP_FPADDR_I;
         if (s->kind == SYMBOL_KIND_VARIABLE) {
           if (s->owner == NULL) {
             add_instruction(code, OP_ADDR)->argument.pointer_value = s->var_mem;
@@ -1050,10 +1040,10 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
   }
 
   if (consume(ctx, INT)) {
-    Token *tk = ctx->stream->tokens.consumed;
-    r->type          = (Type){TYPE_BASE_INT, NULL, -1};
-    r->is_left_value = false;
-    r->is_constant   = true;
+    Token *tk          = ctx->stream->tokens.consumed;
+    r->type            = (Type){TYPE_BASE_INT, NULL, -1};
+    r->is_left_value   = false;
+    r->is_constant     = true;
     Instruction **code = current_function_code(ctx);
     if (code) {
       add_instruction_with_int(code, OP_PUSH_I, tk->integer_value);
@@ -1061,10 +1051,10 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
     return true;
   }
   if (consume(ctx, DOUBLE)) {
-    Token *tk = ctx->stream->tokens.consumed;
-    r->type          = (Type){TYPE_BASE_DOUBLE, NULL, -1};
-    r->is_left_value = false;
-    r->is_constant   = true;
+    Token *tk          = ctx->stream->tokens.consumed;
+    r->type            = (Type){TYPE_BASE_DOUBLE, NULL, -1};
+    r->is_left_value   = false;
+    r->is_constant     = true;
     Instruction **code = current_function_code(ctx);
     if (code) {
       add_instruction_with_double(code, OP_PUSH_F, tk->double_value);
@@ -1072,10 +1062,10 @@ bool primary_expression(ParserContext *ctx, ReturnValue *r) {
     return true;
   }
   if (consume(ctx, CHAR)) {
-    Token *tk = ctx->stream->tokens.consumed;
-    r->type          = (Type){TYPE_BASE_CHAR, NULL, -1};
-    r->is_left_value = false;
-    r->is_constant   = true;
+    Token *tk          = ctx->stream->tokens.consumed;
+    r->type            = (Type){TYPE_BASE_CHAR, NULL, -1};
+    r->is_left_value   = false;
+    r->is_constant     = true;
     Instruction **code = current_function_code(ctx);
     if (code) {
       // char is stored on the stack as int; the VM has no PUSH_C opcode.

@@ -5,6 +5,13 @@ struct B {
   int v;
 };
 
+// ERROR: assign to constant
+void err_assign_constant() {
+  int a[3];
+  int b[3];
+  b = a;
+}
+
 // ERROR: assign destination must be scalar — struct on left
 void err_assign_struct_scalar() {
   struct A s;

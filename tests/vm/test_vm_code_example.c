@@ -151,7 +151,7 @@ int test_13(int n) {
 // test 14
 int test_14(int min, int max) {
   int v;
-  while(1) {
+  while (1) {
     v = random();
     if (v >= min && v <= max)
       return v;

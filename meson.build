@@ -85,6 +85,26 @@ test_vm = executable('test_vm',
 
 test('test_vm', test_vm, args : vm_files, depends : [exe])
 
+# ------- VM TEST INT -----------
+test_vm_int = executable('test_vm_gen_program_int',
+                        'tests/src/test_vm_gen_program_int.c',
+                        src_files,
+                        include_directories : inc_dir,
+                        c_args : compiler_args
+)
+
+test('test_vm_gen_program_int', test_vm_int, args : vm_files, depends : [exe])
+
+# ------- VM TEST DOUBLE -----------
+test_vm_double = executable('test_vm_gen_program_double',
+                        'tests/src/test_vm_gen_program_double.c',
+                        src_files,
+                        include_directories : inc_dir,
+                        c_args : compiler_args
+)
+
+test('test_vm_gen_program_double', test_vm_double, args : vm_files, depends : [exe])
+
 # ------- CODE GENERATOR -------
 code_generator_files = files()
 test_code_generator = executable('test_code_generator',

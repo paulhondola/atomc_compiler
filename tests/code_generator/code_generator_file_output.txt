@@ -1,0 +1,70 @@
+// implementare recursiva pentru factorial
+int fact(int n){
+	if(n<3)return n;
+	return n*fact(n-1);
+	}
+
+void main(){
+	put_i(4.9);		// se afiseaza 4
+	
+	put_i(fact(3));	// se afiseaza 6
+
+	// implementare nerecursiva pentru factorial
+	int r;
+	r=1;
+	int i;
+	i=2;
+	while(i<5){
+		r=r*i;
+		i=i+1;
+		}
+	put_i(r);		// se afiseaza 24
+	}
+
+ret_addr          old_FP        r           i 
+-1                 0            1           2
+        ENTER       2           // r si i
+
+        // put_i(4.9);
+        PUSH.f      4.9         // punem constanta float 4.9 pe stivă
+        CONV.f.i                // convertim în int (se va face 4) pentru că put_i vrea întreg
+        CALL        put_i       // apelăm put_i. Consumă valoarea 4 de pe stivă.
+
+        // put_i(fact(3));
+        PUSH.i      3           
+        CALL        fact        
+        CALL        put_i       
+
+        // int r; r = 1;
+        PUSH.i      1           
+        FPSTORE.i   1           // stocam valoarea 1 in r
+
+        // int i; i = 2;
+        PUSH.i      2           // punem constanta 2 pe stivă
+        FPSTORE.i   2           // stocăm valoarea în i (#2)
+
+L2:     // while(i < 5)
+        FPLOAD.i    2           // punem i pe stivă
+        PUSH.i      5           // punem constanta 5 pe stivă
+        LESS.i                  // verificăm i < 5
+        JF          L3          // Jump if False: dacă i >= 5, ieșim din while (sărim la L3)
+
+        // r = r * i;
+        FPLOAD.i    1           // punem r pe stivă
+        FPLOAD.i    2           // punem i pe stivă
+        MUL.i                   // calculăm r * i
+        FPSTORE.i   1          
+
+        // i = i + 1;
+        FPLOAD.i    2           // punem i pe stivă
+        PUSH.i      1           // punem constanta 1 pe stivă
+        ADD.i                   // calculăm i + 1
+        FPSTORE.i   2           
+
+        JMP         L2          // Jump necondiționat: sărim înapoi la începutul buclei
+
+L3:     // put_i(r);
+        FPLOAD.i    1           // punem r pe stivă
+        CALL        put_i       // afișăm r
+
+        RET         0           // main este void și nu are parametri

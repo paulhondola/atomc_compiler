@@ -2,15 +2,18 @@
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
+#include <argtable3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <argtable3.h>
 
+#include "../include/analyzer/domain.h"
 #include "../include/analyzer/domain_analyzer.h"
+#include "../include/analyzer/symbol.h"
 #include "../include/frontend/lexer.h"
 #include "../include/frontend/parser.h"
 #include "../include/utils/utils.h"
+#include "../include/vm/instruction.h"
 #include "../include/vm/vm.h"
 
 int main(int argc, char *argv[]) {
@@ -22,10 +25,10 @@ int main(int argc, char *argv[]) {
   struct arg_end  *end;
 
   void *argtable[] = {
-      help             = arg_lit0(NULL, "help", "print this help and exit"),
-      tokens_file      = arg_file0("t", "tokens", "<file>", "Output token stream to <file>"),
-      domain_file      = arg_file0("d", "domain", "<file>", "Output domain analyzer info to <file>"),
-      vm_file          = arg_file0("v", "vm", "<file>", "Run VM and redirect output to <file>"),
+      help        = arg_lit0(NULL, "help", "print this help and exit"),
+      tokens_file = arg_file0("t", "tokens", "<file>", "Output token stream to <file>"),
+      domain_file = arg_file0("d", "domain", "<file>", "Output domain analyzer info to <file>"),
+      vm_file     = arg_file0("v", "vm", "<file>", "Run VM and redirect output to <file>"),
       source_code_file = arg_file1(NULL, NULL, "<file>", "Source code file"),
       end              = arg_end(20),
   };
@@ -55,8 +58,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const char *source_code_path  = source_code_file->filename[0];
-  const char *token_output_path = tokens_file->count > 0 ? tokens_file->filename[0] : NULL;
+  const char *source_code_path   = source_code_file->filename[0];
+  const char *token_output_path  = tokens_file->count > 0 ? tokens_file->filename[0] : NULL;
   const char *domain_output_path = domain_file->count > 0 ? domain_file->filename[0] : NULL;
   const char *vm_output_path     = vm_file->count > 0 ? vm_file->filename[0] : NULL;
 
@@ -98,20 +101,30 @@ int main(int argc, char *argv[]) {
   token_stream_show(&token_stream);
 
   push_domain(&domain_analyzer);
+  vm_init(&domain_analyzer);
   parse(&token_stream, &domain_analyzer);
   show_domain(&domain_analyzer, "global");
-  drop_domain(&domain_analyzer);
 
   if (vm_file->count > 0) {
-    push_domain(&domain_analyzer);
-    vm_init(&domain_analyzer);
+    Symbol *sym_main = find_symbol_in_domain(domain_analyzer.symbol_table, "main");
+    if (!sym_main || sym_main->kind != SYMBOL_KIND_FUNCTION) {
+      err("missing main function");
+    }
+
+    Instruction *entry_code = NULL;
+    add_instruction(&entry_code, OP_CALL)->argument.instruction_pointer =
+        sym_main->function.instruction;
+    add_instruction(&entry_code, OP_HALT);
+
     VirtualMachine vm;
     vm_create(&vm);
-    vm.output         = vm_out;
-    Instruction *code = gen_test_program_double(&domain_analyzer);
-    run(&vm, code);
-    drop_domain(&domain_analyzer);
+    vm.output = vm_out;
+    run(&vm, entry_code);
+
+    delete_instruction(entry_code);
   }
+
+  drop_domain(&domain_analyzer);
 
   if (token_out != stdout) {
     fclose(token_out);

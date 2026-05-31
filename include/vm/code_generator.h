@@ -4,6 +4,7 @@
 
 #include "../analyzer/type_analyzer.h"
 #include "vm.h"
+#include "instruction.h"
 
 // inserts after the specified instruction a conversion instruction
 // only if necessary

@@ -6,10 +6,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "../../include/utils/utils.h"
 #include "../../include/analyzer/domain_analyzer.h"
 #include "../../include/analyzer/symbol.h"
 #include "../../include/analyzer/type.h"
+#include "../../include/utils/utils.h"
 #include "../../include/vm/instruction.h"
 #include "../../include/vm/vm.h"
 
@@ -21,14 +21,17 @@
 // Caller frees. Returns NULL on read failure.
 static char *slurp_tmpfile(FILE *f) {
   fflush(f);
-  if (fseek(f, 0L, SEEK_END) != 0) return NULL;
+  if (fseek(f, 0L, SEEK_END) != 0)
+    return NULL;
   long size = ftell(f);
-  if (size < 0) return NULL;
+  if (size < 0)
+    return NULL;
   rewind(f);
   char *buf = (char *)malloc((size_t)size + 1);
-  if (!buf) return NULL;
+  if (!buf)
+    return NULL;
   size_t read = fread(buf, 1, (size_t)size, f);
-  buf[read] = '\0';
+  buf[read]   = '\0';
   return buf;
 }
 
